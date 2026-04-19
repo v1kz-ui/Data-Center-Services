@@ -1,0 +1,64 @@
+agents:
+  - name: Orchestrator Agent
+    card: docs/phase1/agents/orchestrator_agent.md
+    owns:
+      - sprint sequencing
+      - phase gates
+      - dependency control
+  - name: Requirements Agent
+    card: docs/phase1/agents/requirements_agent.md
+    owns:
+      - SRS
+      - acceptance criteria
+      - traceability
+  - name: Architecture Agent
+    card: docs/phase1/agents/architecture_agent.md
+    owns:
+      - SAD
+      - SDD
+      - ADRs
+  - name: Schema Agent
+    card: docs/phase1/agents/schema_agent.md
+    owns:
+      - migrations
+      - schema contracts
+      - data dictionary
+  - name: Ingestion Agent
+    card: docs/phase1/agents/ingestion_agent.md
+    owns:
+      - source adapters
+      - freshness logic
+      - source quality
+  - name: GIS Agent
+    card: docs/phase1/agents/gis_agent.md
+    owns:
+      - rep_point logic
+      - filters
+      - exclusions
+  - name: Scoring Agent
+    card: docs/phase1/agents/scoring_agent.md
+    owns:
+      - factors
+      - bonuses
+      - confidence
+      - provenance
+  - name: API Agent
+    card: docs/phase1/agents/api_agent.md
+    owns:
+      - active-batch read model
+      - search and detail APIs
+      - exports
+  - name: QA Agent
+    card: docs/phase1/agents/qa_agent.md
+    owns:
+      - regression
+      - oracle data
+      - phase certification
+  - name: Ops-Release Agent
+    card: docs/phase1/agents/ops_release_agent.md
+    owns:
+      - environments
+      - CI/CD
+      - cutover
+      - hypercare
+

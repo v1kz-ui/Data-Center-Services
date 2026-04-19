@@ -1,0 +1,663 @@
+{
+  "version": "v1.4-authoritative",
+  "captured_at": "2026-04-18",
+  "cost_summary": {
+    "monthly_source_cost_usd": 0,
+    "notes": [
+      "All listed data sources are zero-dollar sources.",
+      "Mapbox GL JS remains usage-based and is free under 50,000 map loads per month.",
+      "Projected project usage is below 500 map loads per month."
+    ]
+  },
+  "sources": [
+    {
+      "if_code": "IF-001",
+      "name": "HIFLD Substations",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "ArcGIS REST FeatureServer",
+      "auth": "none",
+      "url": "https://hifld-geoplatform.opendata.arcgis.com/datasets/electric-substations",
+      "target_table": "substations",
+      "free": true
+    },
+    {
+      "if_code": "IF-002",
+      "name": "HIFLD Transmission Lines",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "ArcGIS REST FeatureServer",
+      "auth": "none",
+      "url": "https://hifld-geoplatform.opendata.arcgis.com/datasets/electric-power-transmission-lines",
+      "target_table": "transmission_lines",
+      "free": true
+    },
+    {
+      "if_code": "IF-003",
+      "name": "HIFLD Gas Pipelines",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "ArcGIS REST FeatureServer",
+      "auth": "none",
+      "url": "https://hifld-geoplatform.opendata.arcgis.com/datasets/natural-gas-pipelines",
+      "target_table": "gas_pipelines",
+      "free": true
+    },
+    {
+      "if_code": "IF-004",
+      "name": "HIFLD Gas Compressors",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "ArcGIS REST FeatureServer",
+      "auth": "none",
+      "url": "https://hifld-geoplatform.opendata.arcgis.com/datasets/natural-gas-compressor-stations",
+      "target_table": "gas_compressors",
+      "free": true
+    },
+    {
+      "if_code": "IF-005",
+      "name": "HIFLD Service Territories",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "ArcGIS REST FeatureServer",
+      "auth": "none",
+      "url": "https://hifld-geoplatform.opendata.arcgis.com/datasets/electric-retail-service-territories",
+      "target_table": "service_territories",
+      "free": true
+    },
+    {
+      "if_code": "IF-006",
+      "name": "FEMA NFHL Flood Zones",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "ArcGIS REST MapServer",
+      "auth": "none",
+      "url": "https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer",
+      "target_table": "flood_zones",
+      "free": true
+    },
+    {
+      "if_code": "IF-007",
+      "name": "FEMA NRI Risk Index",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "REST API + Download",
+      "auth": "none",
+      "url": "https://hazards.fema.gov/nri",
+      "target_table": "hazard_risk",
+      "free": true
+    },
+    {
+      "if_code": "IF-008",
+      "name": "FCC Broadband Map",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "Bulk CSV Download",
+      "auth": "none",
+      "url": "https://broadbandmap.fcc.gov/data-download/fixed-broadband",
+      "target_table": "fiber_availability",
+      "free": true
+    },
+    {
+      "if_code": "IF-009",
+      "name": "PeeringDB",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "REST API (JSON)",
+      "auth": "none",
+      "url": "https://peeringdb.com/api",
+      "target_table": "ixp_facilities",
+      "free": true
+    },
+    {
+      "if_code": "IF-010",
+      "name": "Census ACS",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "REST API",
+      "auth": "free_api_key",
+      "url": "https://api.census.gov/data/2023/acs/acs5",
+      "target_table": "census_demographics",
+      "free": true
+    },
+    {
+      "if_code": "IF-011",
+      "name": "Census TIGER Boundaries",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "ArcGIS REST + Shapefiles",
+      "auth": "none",
+      "url": "https://tigerweb.geo.census.gov/arcgis/rest/services",
+      "target_table": "census_tracts",
+      "free": true
+    },
+    {
+      "if_code": "IF-012",
+      "name": "BLS QCEW Employment",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "REST API",
+      "auth": "registration",
+      "url": "https://api.bls.gov/publicAPI/v2",
+      "target_table": "employment_data",
+      "free": true
+    },
+    {
+      "if_code": "IF-013",
+      "name": "ERCOT LMP Data",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "CSV Download",
+      "auth": "none",
+      "url": "https://ercot.com/mktinfo/prices/dam/spp",
+      "target_table": "ercot_lmp_nodes",
+      "free": true
+    },
+    {
+      "if_code": "IF-014",
+      "name": "ERCOT Grid Maps",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "PDF + Shapefiles",
+      "auth": "none",
+      "url": "https://ercot.com/gridinfo/maps",
+      "target_table": null,
+      "reference_only": true,
+      "free": true
+    },
+    {
+      "if_code": "IF-015",
+      "name": "ERCOT Large Load Queue",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "PDF Filings",
+      "auth": "none",
+      "url": "https://ercot.com/gridinfo/load",
+      "target_table": "ercot_queue",
+      "free": true
+    },
+    {
+      "if_code": "IF-016",
+      "name": "Oncor Hosting Capacity",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "ArcGIS REST",
+      "auth": "none",
+      "url": "https://oncor.com",
+      "target_table": "hosting_capacity",
+      "notes": [
+        "Uses the Oncor hosting capacity portal."
+      ],
+      "free": true
+    },
+    {
+      "if_code": "IF-017",
+      "name": "CenterPoint Hosting Capacity",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "ArcGIS REST",
+      "auth": "none",
+      "url": "https://centerpointenergy.com",
+      "target_table": "hosting_capacity",
+      "notes": [
+        "Uses the CenterPoint system data portal."
+      ],
+      "free": true
+    },
+    {
+      "if_code": "IF-018",
+      "name": "RRC Texas Pipelines",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "Shapefile Download",
+      "auth": "none",
+      "url": "https://gis.rrc.texas.gov",
+      "target_table": "gas_pipelines",
+      "notes": [
+        "Supplemental pipeline source."
+      ],
+      "free": true
+    },
+    {
+      "if_code": "IF-019",
+      "name": "TCEQ Water Rights",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "ArcGIS REST + Download",
+      "auth": "none",
+      "url": "https://gis-tceq.opendata.arcgis.com",
+      "target_table": "water_rights",
+      "free": true
+    },
+    {
+      "if_code": "IF-020",
+      "name": "TWDB Groundwater",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "GIS + Download",
+      "auth": "none",
+      "url": "https://twdb.texas.gov/groundwater/data",
+      "target_table": "groundwater",
+      "free": true
+    },
+    {
+      "if_code": "IF-021",
+      "name": "USGS NWIS Water",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "REST API",
+      "auth": "none",
+      "url": "https://waterservices.usgs.gov/nwis",
+      "target_table": "water_levels",
+      "free": true
+    },
+    {
+      "if_code": "IF-022",
+      "name": "USGS Earthquake Hazards",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "REST API",
+      "auth": "none",
+      "url": "https://earthquake.usgs.gov/ws/designmaps",
+      "target_table": "seismic_risk",
+      "free": true
+    },
+    {
+      "if_code": "IF-023",
+      "name": "EPA Superfund Sites",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "REST API + ArcGIS",
+      "auth": "none",
+      "url": "https://enviro.epa.gov",
+      "target_table": "superfund_sites",
+      "free": true
+    },
+    {
+      "if_code": "IF-024",
+      "name": "USFWS Critical Habitat",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "ArcGIS REST FeatureServer",
+      "auth": "none",
+      "url": "https://gis-fws.opendata.arcgis.com/datasets/critical-habitat",
+      "target_table": "critical_habitat",
+      "free": true
+    },
+    {
+      "if_code": "IF-025",
+      "name": "EIA Power Plants",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "ArcGIS REST + API",
+      "auth": "free_api_key",
+      "url": "https://atlas.eia.gov",
+      "secondary_url": "https://api.eia.gov/v2/electricity",
+      "target_table": "power_plants",
+      "free": true
+    },
+    {
+      "if_code": "IF-026",
+      "name": "OSM Overpass (Highways)",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "REST API (POST)",
+      "auth": "none",
+      "url": "https://overpass-api.de/api/interpreter",
+      "target_table": "highway_corridors",
+      "free": true
+    },
+    {
+      "if_code": "IF-027",
+      "name": "NTIA BEAD Program",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "Download",
+      "auth": "none",
+      "url": "https://broadbandusa.ntia.gov/funding",
+      "target_table": "bead_funded_areas",
+      "free": true
+    },
+    {
+      "if_code": "IF-028",
+      "name": "TX Comptroller Tax Data",
+      "category": "federal_state",
+      "phase": 1,
+      "protocol": "Download",
+      "auth": "none",
+      "url": "https://comptroller.texas.gov/taxes/property-tax",
+      "target_table": "tax_incentives",
+      "free": true
+    },
+    {
+      "if_code": "IF-029",
+      "name": "DCAD (Dallas)",
+      "category": "county_cad",
+      "phase": 1,
+      "county": "Dallas",
+      "protocol": "Shapefile + CSV",
+      "auth": "none",
+      "url": "https://dallascad.org",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_dcad",
+      "free": true
+    },
+    {
+      "if_code": "IF-030",
+      "name": "TAD (Tarrant)",
+      "category": "county_cad",
+      "phase": 1,
+      "county": "Tarrant",
+      "protocol": "Shapefile + GIS",
+      "auth": "none",
+      "url": "https://www.tad.org",
+      "secondary_url": "https://gis.tarrantcounty.com",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_tad",
+      "free": true
+    },
+    {
+      "if_code": "IF-031",
+      "name": "Collin CAD",
+      "category": "county_cad",
+      "phase": 1,
+      "county": "Collin",
+      "protocol": "Shapefile + CSV",
+      "auth": "none",
+      "url": "https://collincad.org",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_collin_cad",
+      "free": true
+    },
+    {
+      "if_code": "IF-032",
+      "name": "Denton CAD",
+      "category": "county_cad",
+      "phase": 1,
+      "county": "Denton",
+      "protocol": "Shapefile + CSV",
+      "auth": "none",
+      "url": "https://dentoncad.com",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_dentoncad",
+      "free": true
+    },
+    {
+      "if_code": "IF-033",
+      "name": "HCAD (Harris)",
+      "category": "county_cad",
+      "phase": 2,
+      "county": "Harris",
+      "protocol": "Bulk TXT + GIS",
+      "auth": "none",
+      "url": "https://hcad.org/pdata",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_hcad",
+      "free": true
+    },
+    {
+      "if_code": "IF-034",
+      "name": "Fort Bend CAD",
+      "category": "county_cad",
+      "phase": 2,
+      "county": "Fort Bend",
+      "protocol": "CSV + GIS",
+      "auth": "none",
+      "url": "https://fbcad.org",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_fbcad",
+      "free": true
+    },
+    {
+      "if_code": "IF-035",
+      "name": "Montgomery CAD",
+      "category": "county_cad",
+      "phase": 2,
+      "county": "Montgomery",
+      "protocol": "CSV + GIS",
+      "auth": "none",
+      "url": "https://mcad-tx.org",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_mcad",
+      "free": true
+    },
+    {
+      "if_code": "IF-036",
+      "name": "BCAD (Bexar)",
+      "category": "county_cad",
+      "phase": 2,
+      "county": "Bexar",
+      "protocol": "ArcGIS + CSV",
+      "auth": "none",
+      "url": "https://bcad.org",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_bcad",
+      "free": true
+    },
+    {
+      "if_code": "IF-037",
+      "name": "TCAD (Travis)",
+      "category": "county_cad",
+      "phase": 2,
+      "county": "Travis",
+      "protocol": "ArcGIS REST + CSV",
+      "auth": "none",
+      "url": "https://tcad.org",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_tcad",
+      "free": true
+    },
+    {
+      "if_code": "IF-038",
+      "name": "Williamson CAD",
+      "category": "county_cad",
+      "phase": 2,
+      "county": "Williamson",
+      "protocol": "CSV + GIS",
+      "auth": "none",
+      "url": "https://wcad.org",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_wcad",
+      "free": true
+    },
+    {
+      "if_code": "IF-039",
+      "name": "El Paso CAD",
+      "category": "county_cad",
+      "phase": 3,
+      "county": "El Paso",
+      "protocol": "CSV + GIS",
+      "auth": "none",
+      "url": "https://epcad.org",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_epcad",
+      "free": true
+    },
+    {
+      "if_code": "IF-040",
+      "name": "Webb CAD (Laredo)",
+      "category": "county_cad",
+      "phase": 3,
+      "county": "Webb",
+      "protocol": "CSV",
+      "auth": "none",
+      "url": "https://webbcad.org",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_webbcad",
+      "free": true
+    },
+    {
+      "if_code": "IF-041",
+      "name": "Hidalgo CAD (McAllen)",
+      "category": "county_cad",
+      "phase": 3,
+      "county": "Hidalgo",
+      "protocol": "CSV + GIS",
+      "auth": "none",
+      "url": "https://hidalgoad.org",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_hidalgocad",
+      "free": true
+    },
+    {
+      "if_code": "IF-042",
+      "name": "Nueces CAD (Corpus Christi)",
+      "category": "county_cad",
+      "phase": 3,
+      "county": "Nueces",
+      "protocol": "CSV",
+      "auth": "none",
+      "url": "https://nuecescad.net",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_nuecescad",
+      "free": true
+    },
+    {
+      "if_code": "IF-043",
+      "name": "Midland CAD",
+      "category": "county_cad",
+      "phase": 3,
+      "county": "Midland",
+      "protocol": "CSV",
+      "auth": "none",
+      "url": "https://midcad.org",
+      "target_table": "raw_parcels",
+      "target_partition": "raw_parcels_midcad",
+      "free": true
+    },
+    {
+      "if_code": "IF-044",
+      "name": "Dallas Zoning",
+      "category": "city_zoning",
+      "phase": 1,
+      "city": "Dallas",
+      "protocol": "ArcGIS REST",
+      "auth": "none",
+      "url": "https://gis.dallascityhall.com",
+      "target_table": "raw_zoning",
+      "free": true
+    },
+    {
+      "if_code": "IF-045",
+      "name": "Fort Worth Zoning",
+      "category": "city_zoning",
+      "phase": 1,
+      "city": "Fort Worth",
+      "protocol": "ArcGIS REST",
+      "auth": "none",
+      "url": "https://gis.fortworthtexas.gov",
+      "target_table": "raw_zoning",
+      "free": true
+    },
+    {
+      "if_code": "IF-046",
+      "name": "San Antonio Zoning",
+      "category": "city_zoning",
+      "phase": 2,
+      "city": "San Antonio",
+      "protocol": "ArcGIS REST",
+      "auth": "none",
+      "url": "https://gis.sanantonio.gov",
+      "target_table": "raw_zoning",
+      "free": true
+    },
+    {
+      "if_code": "IF-047",
+      "name": "Austin Zoning",
+      "category": "city_zoning",
+      "phase": 2,
+      "city": "Austin",
+      "protocol": "ArcGIS REST",
+      "auth": "none",
+      "url": "https://austintexas.gov/gis",
+      "target_table": "raw_zoning",
+      "free": true
+    },
+    {
+      "if_code": "IF-048",
+      "name": "El Paso Zoning",
+      "category": "city_zoning",
+      "phase": 3,
+      "city": "El Paso",
+      "protocol": "ArcGIS REST",
+      "auth": "none",
+      "url": "https://gis.elpasotexas.gov",
+      "target_table": "raw_zoning",
+      "free": true
+    },
+    {
+      "if_code": "IF-049",
+      "name": "Laredo Zoning",
+      "category": "city_zoning",
+      "phase": 3,
+      "city": "Laredo",
+      "protocol": "Manual",
+      "auth": "none",
+      "url": null,
+      "target_table": "raw_zoning",
+      "notes": [
+        "Contact city planning."
+      ],
+      "free": true
+    },
+    {
+      "if_code": "IF-050",
+      "name": "McAllen Zoning",
+      "category": "city_zoning",
+      "phase": 3,
+      "city": "McAllen",
+      "protocol": "Manual (pending verification)",
+      "auth": "none",
+      "url": "https://mcallen.net/gis",
+      "target_table": "raw_zoning",
+      "notes": [
+        "Verify before Phase 3."
+      ],
+      "free": true
+    },
+    {
+      "if_code": "IF-051",
+      "name": "Corpus Christi Zoning",
+      "category": "city_zoning",
+      "phase": 3,
+      "city": "Corpus Christi",
+      "protocol": "ArcGIS REST / Manual",
+      "auth": "none",
+      "url": "https://cctexas.com/gis",
+      "target_table": "raw_zoning",
+      "free": true
+    }
+  ],
+  "config_flags": [
+    {
+      "flag_key": "verify_deed_restrictions",
+      "name": "Houston - No Zoning",
+      "phase": 2,
+      "metro": "HOU",
+      "target_behavior": "all Houston parcels get F05=7",
+      "notes": [
+        "No zoning data source exists for Houston.",
+        "This is a configuration flag, not an external source."
+      ]
+    }
+  ],
+  "phase_totals": [
+    {
+      "phase": 1,
+      "scope": "DFW POC",
+      "source_count": 34
+    },
+    {
+      "phase": 2,
+      "scope": "+HOU/SA/AUS",
+      "source_count": 42,
+      "config_flag_count": 1
+    },
+    {
+      "phase": 3,
+      "scope": "+Border/Secondary",
+      "source_count": 51,
+      "config_flag_count": 1
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-cache-files-*/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+.python-version
+*.egg-info/
+
+# Local env
+.env
+.env.local
+.env.*.local
+
+# IDE and OS
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+
+# Build and logs
+dist/
+build/
+*.log
+
+# Database and temp
+*.sqlite3
+tmp/
+temp/

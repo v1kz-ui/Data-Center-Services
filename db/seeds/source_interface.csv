@@ -1,0 +1,6 @@
+source_id,interface_name,schema_version,load_mode,validation_notes
+PARCEL,parcel_csv_v1,2026.04,full,"Requires parcel_id, county_fips, acreage, geometry_wkt, lineage_key."
+ZONING,zoning_csv_v1,2026.04,full,"Requires parcel_id, county_fips, zoning_code, lineage_key."
+FLOOD,flood_evidence_v1,2026.04,incremental,"Requires record_key, attribute_name, attribute_value, lineage_key."
+UTILITY,utility_evidence_v1,2026.04,incremental,"Requires record_key, attribute_name, attribute_value, lineage_key."
+MARKET,market_proxy_v1,2026.04,incremental,"Requires record_key, attribute_name, attribute_value, lineage_key."

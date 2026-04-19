@@ -1,0 +1,37 @@
+app:
+  name: dense-data-center-locator
+  env: local
+  port: 8000
+  request_id_header: X-Request-ID
+  trace_id_header: X-Trace-ID
+  uat_environment_name: uat
+
+database:
+  host: localhost
+  port: 5432
+  name: dense_data_center_locator
+  user: postgres
+  password_env: DB_PASSWORD
+  schema: public
+
+batch:
+  publication_mode: activated_only
+  required_metros: []
+  reference_seed_dir: db/seeds
+  uat_scenario_pack_path: infra/uat/phase7_uat_scenarios.json
+
+logging:
+  level: INFO
+
+security:
+  auth_enabled: true
+  subject_header: X-DDCL-Subject
+  name_header: X-DDCL-Name
+  roles_header: X-DDCL-Roles
+
+monitoring:
+  failed_run_threshold: 1
+  failed_snapshot_threshold: 1
+  quarantined_snapshot_threshold: 1
+  freshness_failure_threshold: 1
+  latest_batch_failed_threshold: 1

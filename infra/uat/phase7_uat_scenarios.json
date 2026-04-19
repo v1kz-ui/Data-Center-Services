@@ -1,0 +1,52 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "UAT-OPS-001",
+      "title": "Review operator monitoring summary",
+      "actor_role": "operator",
+      "workflow": "Monitoring overview and failure review",
+      "entrypoint": "/admin/monitoring/overview",
+      "expected_evidence": [
+        "response includes source health rollups",
+        "threshold_trigger_count is visible",
+        "request and trace headers can be captured"
+      ]
+    },
+    {
+      "scenario_id": "UAT-OPS-002",
+      "title": "Retry a failed metro run with audit capture",
+      "actor_role": "operator",
+      "workflow": "Retry and action-history verification",
+      "entrypoint": "/admin/orchestration/runs/{run_id}/retry",
+      "expected_evidence": [
+        "operator action event is persisted",
+        "conflict protection prevents duplicate retry",
+        "history endpoint shows the retry decision"
+      ]
+    },
+    {
+      "scenario_id": "UAT-ADM-003",
+      "title": "Export audit evidence for a scored parcel",
+      "actor_role": "admin",
+      "workflow": "Audit package generation and support handoff",
+      "entrypoint": "/admin/audit/packages",
+      "expected_evidence": [
+        "package includes run summary",
+        "parcel evidence is included when requested",
+        "package can be correlated to request traffic"
+      ]
+    },
+    {
+      "scenario_id": "UAT-READ-004",
+      "title": "Validate active batch read access",
+      "actor_role": "reader",
+      "workflow": "Read-only operational verification",
+      "entrypoint": "/scoring/runs/{run_id}/scores",
+      "expected_evidence": [
+        "reader access is allowed on published outputs",
+        "sensitive admin routes remain blocked",
+        "scoring explanations are returned for active results"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+factor_id,display_name,description,ordinal,is_active
+F01,Factor 01,Placeholder definition for factor F01,1,true
+F02,Factor 02,Placeholder definition for factor F02,2,true
+F03,Factor 03,Placeholder definition for factor F03,3,true
+F04,Factor 04,Placeholder definition for factor F04,4,true
+F05,Factor 05,Placeholder definition for factor F05,5,true
+F06,Factor 06,Placeholder definition for factor F06,6,true
+F07,Factor 07,Placeholder definition for factor F07,7,true
+F08,Factor 08,Placeholder definition for factor F08,8,true
+F09,Factor 09,Placeholder definition for factor F09,9,true
+F10,Factor 10,Placeholder definition for factor F10,10,true
+

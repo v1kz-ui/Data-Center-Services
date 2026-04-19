@@ -1,0 +1,301 @@
+{
+  "definitions": [
+    {
+      "connector_key": "dfw_parcel_pilot",
+      "source_id": "PARCEL",
+      "metro_id": "DFW",
+      "interface_name": "parcel_json_pilot_v1",
+      "adapter_type": "fixture",
+      "enabled": true,
+      "priority": 100,
+      "description": "Pilot parcel connector foundation for DFW.",
+      "fetch_policy": {
+        "max_attempts": 2,
+        "backoff_seconds": 0.0,
+        "rate_limit_per_minute": 60,
+        "checkpoint_field": "updated_at",
+        "checkpoint_param": "updated_since"
+      },
+      "field_map": {
+        "parcel_id": "parcel_id",
+        "county_fips": "county_fips",
+        "acreage": "acreage",
+        "geometry_wkt": "geometry_wkt",
+        "lineage_key": "lineage_key",
+        "apn": "apn"
+      },
+      "fixture_records": [
+        {
+          "parcel_id": "DFW-PARCEL-1001",
+          "county_fips": "48085",
+          "acreage": "31.4",
+          "geometry_wkt": "POLYGON ((0 0, 0 2, 2 2, 2 0, 0 0))",
+          "lineage_key": "parcel:DFW-PARCEL-1001",
+          "apn": "R123456",
+          "updated_at": "2026-04-17T16:00:00Z"
+        },
+        {
+          "parcel_id": "DFW-PARCEL-1002",
+          "county_fips": "48085",
+          "acreage": "18.2",
+          "geometry_wkt": "POLYGON ((3 0, 3 2, 5 2, 5 0, 3 0))",
+          "lineage_key": "parcel:DFW-PARCEL-1002",
+          "apn": "R123457",
+          "updated_at": "2026-04-17T17:00:00Z"
+        }
+      ]
+    },
+    {
+      "connector_key": "dfw_dallas_arcgis_parcels_live",
+      "source_id": "PARCEL",
+      "metro_id": "DFW",
+      "interface_name": "arcgis_dallas_tax_parcels_v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": false,
+      "priority": 10,
+      "description": "Disabled live Dallas ArcGIS parcel blueprint for DFW counties served by the Dallas tax parcel service.",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 30
+      },
+      "request": {
+        "endpoint_url": "https://gis.dallascityhall.com/arcgis/rest/services/Basemap/DallasTaxParcels/FeatureServer/0",
+        "timeout_seconds": 45.0,
+        "query_params": {
+          "where": "1=1",
+          "outFields": "OBJECTID,AREA_FEET,ACCT,GIS_ACCT,COUNTY",
+          "returnGeometry": "true",
+          "f": "geojson",
+          "outSR": "4326"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 1000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "field_rules": [
+        {
+          "target": "county_fips",
+          "source": "COUNTY",
+          "transform": "map_value",
+          "options": {
+            "map": {
+              "Collin": "48085",
+              "Collin County": "48085",
+              "Dallas": "48113",
+              "Dallas County": "48113",
+              "Denton": "48121",
+              "Denton County": "48121",
+              "Kaufman": "48257",
+              "Kaufman County": "48257",
+              "Rockwall": "48397",
+              "Rockwall County": "48397"
+            }
+          }
+        },
+        {
+          "target": "apn",
+          "source": [
+            "GIS_ACCT",
+            "ACCT"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "DFW:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": "AREA_FEET",
+          "transform": "square_feet_to_acres"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "dfw_zoning_pilot",
+      "source_id": "ZONING",
+      "metro_id": "DFW",
+      "interface_name": "zoning_json_pilot_v1",
+      "adapter_type": "fixture",
+      "enabled": true,
+      "priority": 100,
+      "description": "Pilot zoning connector foundation for DFW.",
+      "fetch_policy": {
+        "max_attempts": 2,
+        "backoff_seconds": 0.0,
+        "rate_limit_per_minute": 60,
+        "checkpoint_field": "updated_at",
+        "checkpoint_param": "updated_since"
+      },
+      "field_map": {
+        "parcel_id": "parcel_id",
+        "county_fips": "county_fips",
+        "zoning_code": "zoning_code",
+        "land_use_code": "land_use_code",
+        "lineage_key": "lineage_key"
+      },
+      "fixture_records": [
+        {
+          "parcel_id": "DFW-PARCEL-1001",
+          "county_fips": "48085",
+          "zoning_code": "LI",
+          "land_use_code": "INDUSTRIAL",
+          "lineage_key": "zoning:DFW-PARCEL-1001",
+          "updated_at": "2026-04-17T16:30:00Z"
+        },
+        {
+          "parcel_id": "DFW-PARCEL-1002",
+          "county_fips": "48085",
+          "zoning_code": "HI",
+          "land_use_code": "HEAVY_INDUSTRIAL",
+          "lineage_key": "zoning:DFW-PARCEL-1002",
+          "updated_at": "2026-04-17T17:30:00Z"
+        }
+      ]
+    },
+    {
+      "connector_key": "dfw_dallas_arcgis_zoning_live",
+      "source_id": "ZONING",
+      "metro_id": "DFW",
+      "interface_name": "arcgis_dallas_base_zoning_v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": false,
+      "inventory_if_codes": [
+        "IF-044"
+      ],
+      "priority": 10,
+      "description": "Disabled live Dallas ArcGIS zoning blueprint expanded onto parcel representative points.",
+      "preprocess_strategy": "zoning_overlay_to_parcels",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 30
+      },
+      "request": {
+        "endpoint_url": "https://gis.dallascityhall.com/arcgis/rest/services/sdc_public/Zoning/MapServer/15",
+        "timeout_seconds": 45.0,
+        "query_params": {
+          "where": "1=1",
+          "outFields": "OBJECTID,ZONE_DIST,LONG_ZONE_DIST",
+          "returnGeometry": "true",
+          "f": "geojson",
+          "outSR": "4326"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 1000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "static_fields": {
+        "county_fips": "48113"
+      },
+      "field_rules": [
+        {
+          "target": "zoning_code",
+          "source": "ZONE_DIST",
+          "transform": "strip"
+        },
+        {
+          "target": "land_use_code",
+          "source": [
+            "LONG_ZONE_DIST",
+            "ZONE_DIST"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "zoning-overlay:{OBJECTID}"
+        }
+      ]
+    },
+    {
+      "connector_key": "dfw_fort_worth_arcgis_zoning_live",
+      "source_id": "ZONING",
+      "metro_id": "DFW",
+      "interface_name": "arcgis_fort_worth_zoning_fill_v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": false,
+      "inventory_if_codes": [
+        "IF-045"
+      ],
+      "priority": 20,
+      "description": "Disabled live Fort Worth ArcGIS zoning blueprint expanded onto parcel representative points.",
+      "preprocess_strategy": "zoning_overlay_to_parcels",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 30,
+        "checkpoint_field": "DATESTAMP"
+      },
+      "request": {
+        "endpoint_url": "https://mapit.fortworthtexas.gov/ags/rest/services/Planning_Development/Zoning/MapServer/25",
+        "timeout_seconds": 45.0,
+        "query_params": {
+          "where": "1=1",
+          "outFields": "OBJECTID,ZONING,BASE_ZONING,PRIMARY_USE,DATESTAMP,Approval_Date",
+          "returnGeometry": "true",
+          "f": "geojson",
+          "outSR": "4326"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 5000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "field_rules": [
+        {
+          "target": "zoning_code",
+          "source": [
+            "BASE_ZONING",
+            "ZONING"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "land_use_code",
+          "source": [
+            "PRIMARY_USE",
+            "ZONING"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "zoning-overlay:{OBJECTID}"
+        }
+      ]
+    }
+  ]
+}

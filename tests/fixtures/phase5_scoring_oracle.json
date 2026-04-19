@@ -1,0 +1,133 @@
+{
+  "summary": {
+    "profile_name": "default_v1",
+    "run_status": "completed",
+    "scored_count": 2,
+    "pending_scoring_count": 0,
+    "factor_detail_count": 20,
+    "bonus_detail_count": 10,
+    "provenance_count": 22,
+    "average_viability_score": "59.00",
+    "average_confidence_score": "81.50",
+    "status_counts": [
+      {
+        "status": "excluded",
+        "count": 1
+      },
+      {
+        "status": "scored",
+        "count": 2
+      }
+    ]
+  },
+  "parcel_detail": {
+    "parcel_id": "P-SCORE-A",
+    "status": "scored",
+    "viability_score": "60.00",
+    "confidence_score": "100.00",
+    "evidence_quality_counts": {
+      "measured": 10,
+      "proxy": 1
+    },
+    "factor_details": [
+      {
+        "factor_id": "F01",
+        "points_awarded": "1.00",
+        "input_names": [
+          "f01_measured",
+          "f01_proxy"
+        ]
+      },
+      {
+        "factor_id": "F02",
+        "points_awarded": "2.00",
+        "input_names": [
+          "f02_measured"
+        ]
+      },
+      {
+        "factor_id": "F03",
+        "points_awarded": "3.00",
+        "input_names": [
+          "f03_measured"
+        ]
+      },
+      {
+        "factor_id": "F04",
+        "points_awarded": "4.00",
+        "input_names": [
+          "f04_measured"
+        ]
+      },
+      {
+        "factor_id": "F05",
+        "points_awarded": "5.00",
+        "input_names": [
+          "f05_measured"
+        ]
+      },
+      {
+        "factor_id": "F06",
+        "points_awarded": "6.00",
+        "input_names": [
+          "f06_measured"
+        ]
+      },
+      {
+        "factor_id": "F07",
+        "points_awarded": "7.00",
+        "input_names": [
+          "f07_measured"
+        ]
+      },
+      {
+        "factor_id": "F08",
+        "points_awarded": "8.00",
+        "input_names": [
+          "f08_measured"
+        ]
+      },
+      {
+        "factor_id": "F09",
+        "points_awarded": "9.00",
+        "input_names": [
+          "f09_measured"
+        ]
+      },
+      {
+        "factor_id": "F10",
+        "points_awarded": "10.00",
+        "input_names": [
+          "f10_measured"
+        ]
+      }
+    ],
+    "bonus_details": [
+      {
+        "bonus_id": "B01",
+        "applied": true,
+        "points_awarded": "5.00"
+      },
+      {
+        "bonus_id": "B02",
+        "applied": false,
+        "points_awarded": "0.00"
+      },
+      {
+        "bonus_id": "B03",
+        "applied": false,
+        "points_awarded": "0.00"
+      },
+      {
+        "bonus_id": "B04",
+        "applied": false,
+        "points_awarded": "0.00"
+      },
+      {
+        "bonus_id": "B05",
+        "applied": false,
+        "points_awarded": "0.00"
+      }
+    ]
+  }
+}

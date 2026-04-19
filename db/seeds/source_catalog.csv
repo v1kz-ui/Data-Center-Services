@@ -1,0 +1,6 @@
+source_id,display_name,owner_name,refresh_cadence,block_refresh,metro_coverage,target_table_name,is_active
+PARCEL,Approved Parcel Feed,Data Governance,daily,true,"DFW,AUS,PHX,LAS",raw_parcels,true
+ZONING,Approved Zoning Feed,Data Governance,weekly,true,"DFW,AUS,PHX,LAS",raw_zoning,true
+FLOOD,Flood Risk Feed,Data Governance,daily,true,"DFW,AUS,PHX,LAS",source_evidence,true
+UTILITY,Utility Evidence Feed,Data Governance,weekly,false,"DFW,AUS,PHX,LAS",source_evidence,true
+MARKET,Market Proxy Feed,Data Governance,weekly,false,"DFW,AUS,PHX,LAS",source_evidence,true
