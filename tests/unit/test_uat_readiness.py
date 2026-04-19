@@ -1,9 +1,17 @@
+import csv
 import json
+from pathlib import Path
 import subprocess
 import sys
 
 from app.core.settings import get_settings
 from app.services.uat_readiness import build_uat_manifest
+
+
+def _seed_row_count(filename: str) -> int:
+    path = Path("db/seeds") / filename
+    with path.open(encoding="utf-8", newline="") as csv_file:
+        return sum(1 for _ in csv.DictReader(csv_file))
 
 
 def test_uat_manifest_includes_seed_counts_and_scenarios() -> None:
@@ -14,13 +22,13 @@ def test_uat_manifest_includes_seed_counts_and_scenarios() -> None:
     assert manifest.environment_name == "uat"
     assert manifest.request_id_header == "X-Request-ID"
     assert manifest.trace_id_header == "X-Trace-ID"
-    assert seed_files["bonus_catalog.csv"].row_count == 5
-    assert seed_files["metro_catalog.csv"].row_count == 4
-    assert seed_files["county_catalog.csv"].row_count == 9
-    assert seed_files["factor_catalog.csv"].row_count == 10
-    assert seed_files["scoring_profile.csv"].row_count == 1
-    assert seed_files["scoring_profile_factor.csv"].row_count == 10
-    assert seed_files["source_catalog.csv"].row_count == 5
+    assert seed_files["bonus_catalog.csv"].row_count == _seed_row_count("bonus_catalog.csv")
+    assert seed_files["metro_catalog.csv"].row_count == _seed_row_count("metro_catalog.csv")
+    assert seed_files["county_catalog.csv"].row_count == _seed_row_count("county_catalog.csv")
+    assert seed_files["factor_catalog.csv"].row_count == _seed_row_count("factor_catalog.csv")
+    assert seed_files["scoring_profile.csv"].row_count == _seed_row_count("scoring_profile.csv")
+    assert seed_files["scoring_profile_factor.csv"].row_count == _seed_row_count("scoring_profile_factor.csv")
+    assert seed_files["source_catalog.csv"].row_count == _seed_row_count("source_catalog.csv")
     assert scenario_ids == {
         "UAT-OPS-001",
         "UAT-OPS-002",

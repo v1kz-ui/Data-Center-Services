@@ -1,4 +1,7 @@
 # ruff: noqa: E501
+from __future__ import annotations
+
+import json
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from html import escape
@@ -6,147 +9,23 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse
-from fastapi.routing import APIRoute
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.routes import audit as audit_routes
-from app.api.routes import evaluation as evaluation_routes
-from app.api.routes import ingestion as ingestion_routes
-from app.api.routes import monitoring as monitoring_routes
-from app.api.routes import orchestration as orchestration_routes
-from app.api.routes import scoring as scoring_routes
-from app.api.routes import uat as uat_routes
 from app.core.security import require_admin_access
 from app.core.settings import Settings, get_settings
 from app.db.models import MANAGED_TABLES
 from app.db.session import SessionLocal
+from app.schemas.dashboard import TexasDashboardSummaryResponse
+from app.services.customer_dashboard import build_customer_dashboard_summary
 from app.services.monitoring import MonitoringThresholdPolicy, build_monitoring_overview
+from app.services.source_inventory import (
+    SourceInventoryConfigurationError,
+    load_authoritative_source_inventory,
+)
 
 router = APIRouter()
 AdminAccess = Annotated[object, Depends(require_admin_access)]
 APP_VERSION = "0.1.0"
-PUBLIC_ROUTE_PATHS = frozenset({"/", "/dashboard/summary", "/health", "/version"})
-
-
-def _api_routes(target_router: APIRouter) -> list[APIRoute]:
-    return [route for route in target_router.routes if isinstance(route, APIRoute)]
-
-
-def _build_domain_inventory() -> list[dict[str, Any]]:
-    domain_blueprints = (
-        {
-            "slug": "foundation",
-            "label": "Foundation",
-            "router": router,
-            "focus": "Public surface, settings, headers, table inventory",
-            "accent": "lagoon",
-        },
-        {
-            "slug": "ingestion",
-            "label": "Ingestion",
-            "router": ingestion_routes.router,
-            "focus": "Source loads, freshness, health snapshots",
-            "accent": "citrus",
-        },
-        {
-            "slug": "evaluation",
-            "label": "Evaluation",
-            "router": evaluation_routes.router,
-            "focus": "Run scope, exclusion rules, replay control",
-            "accent": "ember",
-        },
-        {
-            "slug": "scoring",
-            "label": "Scoring",
-            "router": scoring_routes.router,
-            "focus": "Policies, parcel detail, score summaries",
-            "accent": "sky",
-        },
-        {
-            "slug": "orchestration",
-            "label": "Orchestration",
-            "router": orchestration_routes.router,
-            "focus": "Batch planning, retries, activation checks",
-            "accent": "marine",
-        },
-        {
-            "slug": "monitoring",
-            "label": "Monitoring",
-            "router": monitoring_routes.router,
-            "focus": "Thresholds, failed runs, alert overview",
-            "accent": "signal",
-        },
-        {
-            "slug": "audit",
-            "label": "Audit",
-            "router": audit_routes.router,
-            "focus": "Run audit export and traceable package assembly",
-            "accent": "graphite",
-        },
-        {
-            "slug": "uat",
-            "label": "UAT + Release",
-            "router": uat_routes.router,
-            "focus": "Cycles, handoff, signoff, archive operations",
-            "accent": "aurora",
-        },
-    )
-
-    inventory: list[dict[str, Any]] = []
-
-    for blueprint in domain_blueprints:
-        routes = _api_routes(blueprint["router"])
-        methods = sorted(
-            {
-                method
-                for route in routes
-                for method in (route.methods or set())
-                if method not in {"HEAD", "OPTIONS"}
-            }
-        )
-        inventory.append(
-            {
-                "slug": blueprint["slug"],
-                "label": blueprint["label"],
-                "focus": blueprint["focus"],
-                "accent": blueprint["accent"],
-                "route_count": len(routes),
-                "methods": methods,
-                "sample_paths": [route.path for route in routes[:3]],
-            }
-        )
-
-    return inventory
-
-
-def _build_tripwires(settings: Settings) -> list[dict[str, Any]]:
-    return [
-        {
-            "label": "Failed runs",
-            "value": settings.monitoring_failed_run_threshold,
-            "detail": "Recent run failures before alerting",
-        },
-        {
-            "label": "Failed snapshots",
-            "value": settings.monitoring_failed_snapshot_threshold,
-            "detail": "Broken source loads before escalation",
-        },
-        {
-            "label": "Quarantined snapshots",
-            "value": settings.monitoring_quarantined_snapshot_threshold,
-            "detail": "Quarantine tolerance for latest loads",
-        },
-        {
-            "label": "Freshness misses",
-            "value": settings.monitoring_freshness_failure_threshold,
-            "detail": "Out-of-date source checks allowed",
-        },
-        {
-            "label": "Latest batch failures",
-            "value": settings.monitoring_latest_batch_failed_threshold,
-            "detail": "Batch failure tolerance before paging",
-        },
-    ]
 
 
 def _isoformat_or_none(value: datetime | None) -> str | None:
@@ -315,99 +194,119 @@ def _read_monitoring_snapshot(settings: Settings) -> dict[str, Any]:
     }
 
 
-def _build_dashboard_summary(settings: Settings) -> dict[str, Any]:
-    domains = _build_domain_inventory()
-    total_route_count = sum(domain["route_count"] for domain in domains)
-    protected_route_count = max(total_route_count - len(PUBLIC_ROUTE_PATHS), 0)
-    generated_at = datetime.now(UTC)
+def _read_source_inventory_snapshot(settings: Settings) -> dict[str, Any]:
+    try:
+        inventory = load_authoritative_source_inventory(
+            settings.authoritative_source_inventory_path
+        )
+    except SourceInventoryConfigurationError as exc:
+        return {
+            "available": False,
+            "error": str(exc),
+            "version": None,
+            "captured_at": None,
+            "total_sources": 0,
+            "free_sources": 0,
+            "config_flag_count": 0,
+            "phase_totals": [],
+        }
 
     return {
-        "app_name": settings.app_name,
-        "display_name": settings.app_name.replace("-", " ").title(),
-        "environment": settings.app_env,
-        "version": APP_VERSION,
-        "generated_at": generated_at.isoformat(),
-        "phase_count": len(domains),
-        "public_route_count": len(PUBLIC_ROUTE_PATHS),
-        "protected_route_count": protected_route_count,
-        "total_route_count": total_route_count,
-        "managed_table_count": len(MANAGED_TABLES),
-        "managed_tables": MANAGED_TABLES,
-        "domains": domains,
-        "tripwires": _build_tripwires(settings),
-        "monitoring": _read_monitoring_snapshot(settings),
-        "auth": {
-            "enabled": settings.auth_enabled,
-            "subject_header": settings.auth_subject_header,
-            "name_header": settings.auth_name_header,
-            "roles_header": settings.auth_roles_header,
-        },
-        "runtime": {
-            "request_header": settings.request_id_header,
-            "trace_header": settings.trace_id_header,
-            "uat_environment": settings.uat_environment_name,
-            "scenario_pack_path": settings.uat_scenario_pack_path,
-        },
+        "available": True,
+        "error": None,
+        "version": inventory.version,
+        "captured_at": inventory.captured_at,
+        "total_sources": len(inventory.sources),
+        "free_sources": sum(1 for item in inventory.sources if item.free),
+        "config_flag_count": len(inventory.config_flags),
+        "phase_totals": [
+            {
+                "phase": item.phase,
+                "scope": item.scope,
+                "source_count": item.source_count,
+                "config_flag_count": item.config_flag_count,
+            }
+            for item in inventory.phase_totals
+        ],
     }
 
 
-def _render_metric_cards(summary: dict[str, Any]) -> str:
-    metrics = (
-        (
-            "Public APIs",
-            summary["public_route_count"],
-            "Instant status routes and dashboard surfaces.",
-            "lagoon",
-        ),
-        (
-            "Protected APIs",
-            summary["protected_route_count"],
-            "Operator and admin command lanes behind RBAC.",
-            "marine",
-        ),
-        (
-            "Managed Tables",
-            summary["managed_table_count"],
-            "Structured persistence spanning source, scoring, and UAT.",
-            "citrus",
-        ),
-        (
-            "Active Phases",
-            summary["phase_count"],
-            "Foundation through release archive coverage.",
-            "ember",
-        ),
+def _build_dashboard_summary(settings: Settings) -> dict[str, Any]:
+    return build_customer_dashboard_summary(
+        settings,
+        monitoring_snapshot=_read_monitoring_snapshot(settings),
+        source_inventory_snapshot=_read_source_inventory_snapshot(settings),
     )
 
+
+def _json_for_html(payload: Any) -> str:
+    return json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
+
+
+def _tokenize(value: str) -> str:
+    return "-".join(
+        chunk
+        for chunk in "".join(
+            character.lower() if character.isalnum() else " "
+            for character in value
+        ).split()
+        if chunk
+    )
+
+
+def _map_position(lat: float, lon: float) -> tuple[float, float]:
+    min_lat, max_lat = 25.7, 36.6
+    min_lon, max_lon = -106.7, -93.5
+    x = ((lon - min_lon) / (max_lon - min_lon)) * 100
+    y = 100 - ((lat - min_lat) / (max_lat - min_lat)) * 100
+    return max(4.0, min(96.0, x)), max(6.0, min(94.0, y))
+
+
+def _render_metric_cards(metrics: Iterable[dict[str, Any]]) -> str:
     cards: list[str] = []
-    for label, value, detail, tone in metrics:
+    for metric in metrics:
         cards.append(
             f"""
-            <article class="metric-card tone-{tone}">
-              <span>{escape(label)}</span>
-              <strong data-count="{value}">0</strong>
-              <p>{escape(detail)}</p>
+            <article class="metric-card tone-{escape(metric["tone"])}">
+              <span>{escape(metric["label"])}</span>
+              <strong>{metric["value"]}</strong>
+              <p>{escape(metric["detail"])}</p>
             </article>
             """
         )
     return "\n".join(cards)
 
 
-def _render_phase_cards(domains: Iterable[dict[str, Any]]) -> str:
+def _render_strength_chips(strengths: Iterable[str]) -> str:
+    return "".join(
+        f'<span class="strength-chip">{escape(strength)}</span>'
+        for strength in strengths
+    )
+
+
+def _render_featured_cards(opportunities: Iterable[dict[str, Any]]) -> str:
     cards: list[str] = []
-    for index, domain in enumerate(domains, start=1):
-        methods = ", ".join(domain["methods"][:3]) or "GET"
+    for item in opportunities:
         cards.append(
             f"""
-            <article class="phase-card tone-{escape(domain["accent"])}">
-              <span class="phase-index">{index:02d}</span>
-              <div class="phase-copy">
-                <h3>{escape(domain["label"])}</h3>
-                <p>{escape(domain["focus"])}</p>
+            <article class="featured-card">
+              <div class="featured-score">
+                <span>Score</span>
+                <strong>{item["viability_score"]}</strong>
               </div>
-              <div class="phase-meta">
-                <strong>{domain["route_count"]} routes</strong>
-                <small>{escape(methods)}</small>
+              <div class="featured-copy">
+                <header>
+                  <small>{escape(item["corridor_name"])}</small>
+                  <h3>{escape(item["site_name"])}</h3>
+                </header>
+                <p>{escape(item["summary"])}</p>
+                <div class="featured-meta">
+                  <span>{escape(item["city"])} · {escape(item["county"])}</span>
+                  <span>{escape(item["readiness_stage"])}</span>
+                </div>
+                <div class="strength-list">
+                  {_render_strength_chips(item["strengths"])}
+                </div>
               </div>
             </article>
             """
@@ -415,105 +314,149 @@ def _render_phase_cards(domains: Iterable[dict[str, Any]]) -> str:
     return "\n".join(cards)
 
 
-def _render_heat_rows(domains: Iterable[dict[str, Any]]) -> str:
-    domain_list = list(domains)
-    max_routes = max((domain["route_count"] for domain in domain_list), default=1)
-
+def _render_corridor_rows(corridors: Iterable[dict[str, Any]]) -> str:
     rows: list[str] = []
-    for domain in domain_list:
-        width = max(18, round((domain["route_count"] / max_routes) * 100))
+    for item in corridors:
+        width = max(18, min(100, round((item["average_viability_score"] / 100) * 100)))
         rows.append(
             f"""
-            <div class="heat-row">
-              <div class="heat-label">
-                <span>{escape(domain["label"])}</span>
-                <strong>{domain["route_count"]}</strong>
+            <article class="corridor-row">
+              <div class="corridor-copy">
+                <header>
+                  <strong>{escape(item["name"])}</strong>
+                  <span>{item["site_count"]} sites · {item["priority_now_count"]} priority now</span>
+                </header>
+                <small>{escape(item["lead_metro"])} · {escape(item["lead_university"])}</small>
               </div>
-              <div class="heat-bar">
-                <span class="heat-fill tone-{escape(domain["accent"])}" style="width: {width}%"></span>
+              <div class="corridor-meter">
+                <div class="corridor-track">
+                  <span class="corridor-fill" style="width: {width}%"></span>
+                </div>
+                <strong>{item["average_viability_score"]}</strong>
               </div>
-            </div>
+            </article>
             """
         )
     return "\n".join(rows)
 
 
-def _render_domain_tiles(domains: Iterable[dict[str, Any]]) -> str:
-    tiles: list[str] = []
-    for domain in domains:
-        path_cluster = "".join(
-            f'<code>{escape(path)}</code>' for path in domain["sample_paths"]
+def _render_opportunity_rows(opportunities: Iterable[dict[str, Any]]) -> str:
+    rows: list[str] = []
+    for item in opportunities:
+        search_blob = " ".join(
+            [
+                item["site_name"],
+                item["corridor_name"],
+                item["metro"],
+                item["city"],
+                item["county"],
+                item["university_anchor"],
+                item["readiness_stage"],
+            ]
         )
-        tiles.append(
+        rows.append(
             f"""
-            <article class="domain-tile tone-{escape(domain["accent"])}">
-              <header>
-                <span>{escape(domain["label"])}</span>
-                <strong>{domain["route_count"]} endpoints</strong>
-              </header>
-              <p>{escape(domain["focus"])}</p>
-              <div class="path-cluster">
-                {path_cluster}
-              </div>
-            </article>
+            <tr
+              class="opportunity-row"
+              data-metro="{escape(_tokenize(item["metro"]))}"
+              data-stage="{escape(_tokenize(item["readiness_stage"]))}"
+              data-university="{escape(_tokenize(item["university_anchor"]))}"
+              data-search="{escape(search_blob.lower())}"
+            >
+              <td><span class="rank-pill">{item["rank"]:02d}</span></td>
+              <td>
+                <div class="site-cell">
+                  <strong>{escape(item["site_name"])}</strong>
+                  <span>{escape(item["city"])} · {escape(item["county"])}</span>
+                  <small>{escape(item["corridor_name"])}</small>
+                </div>
+              </td>
+              <td>{escape(item["metro"])}</td>
+              <td>{escape(item["university_anchor"])}</td>
+              <td>{escape(item["acreage_band"])}</td>
+              <td><span class="stage-chip">{escape(item["readiness_stage"])}</span></td>
+              <td>
+                <div class="score-cell">
+                  <strong>{item["viability_score"]}</strong>
+                  <small>{escape(item["score_band"])}</small>
+                </div>
+              </td>
+              <td>
+                <div class="distance-cell">
+                  <strong>{item["distance_to_city_miles"]} mi</strong>
+                  <small>{item["distance_to_university_miles"]} mi to campus</small>
+                </div>
+              </td>
+            </tr>
             """
         )
-    return "\n".join(tiles)
+    return "\n".join(rows)
 
 
-def _render_tripwire_cards(tripwires: Iterable[dict[str, Any]]) -> str:
+def _render_map_points(opportunities: Iterable[dict[str, Any]]) -> str:
+    points: list[str] = []
+    for item in opportunities:
+        x, y = _map_position(item["lat"], item["lon"])
+        if item["score_band"] == "Tier 1":
+            radius = 4.8
+            tone = "tier-1"
+        elif item["score_band"] == "Tier 2":
+            radius = 4.0
+            tone = "tier-2"
+        else:
+            radius = 3.2
+            tone = "tier-3"
+        points.append(
+            f"""
+            <circle class="map-point {tone}" cx="{x:.2f}" cy="{y:.2f}" r="{radius:.2f}">
+              <title>{escape(item["site_name"])} · {escape(item["city"])} · score {item["viability_score"]}</title>
+            </circle>
+            """
+        )
+    return "\n".join(points)
+
+
+def _render_map_labels(opportunities: Iterable[dict[str, Any]]) -> str:
+    labels: list[str] = []
+    for item in list(opportunities)[:6]:
+        x, y = _map_position(item["lat"], item["lon"])
+        labels.append(
+            f"""
+            <g class="map-label">
+              <text x="{x + 1.6:.2f}" y="{y - 1.4:.2f}">{escape(item["city"])}</text>
+            </g>
+            """
+        )
+    return "\n".join(labels)
+
+
+def _render_filter_options(values: Iterable[str]) -> str:
+    return "".join(
+        f'<option value="{escape(_tokenize(value))}">{escape(value)}</option>'
+        for value in values
+    )
+
+
+def _render_phase_totals(phase_totals: Iterable[dict[str, Any]]) -> str:
     cards: list[str] = []
-    for tripwire in tripwires:
+    for item in phase_totals:
         cards.append(
             f"""
-            <article class="tripwire-card">
-              <strong>{escape(tripwire["label"])}</strong>
-              <span>Trigger at {tripwire["value"]}</span>
-              <p>{escape(tripwire["detail"])}</p>
+            <article class="phase-pill">
+              <strong>Phase {item["phase"]}</strong>
+              <span>{item["source_count"]} sources</span>
+              <small>{escape(item["scope"])}</small>
             </article>
             """
         )
     return "\n".join(cards)
 
 
-def _render_auth_rows(summary: dict[str, Any]) -> str:
-    auth = summary["auth"]
-    runtime = summary["runtime"]
-    auth_mode = (
-        "Header RBAC active"
-        if auth["enabled"]
-        else "Authentication disabled for local development"
-    )
-    rows = (
-        ("Mode", auth_mode),
-        ("Subject header", auth["subject_header"]),
-        ("Name header", auth["name_header"]),
-        ("Roles header", auth["roles_header"]),
-        ("Request correlation", runtime["request_header"]),
-        ("Trace correlation", runtime["trace_header"]),
-    )
-
-    rendered_rows: list[str] = []
-    for label, value in rows:
-        rendered_rows.append(
-            f"""
-            <div class="auth-row">
-              <span>{escape(label)}</span>
-              <code>{escape(value)}</code>
-            </div>
-            """
-        )
-    return "\n".join(rendered_rows)
-
-
-def _render_table_chips(tables: Iterable[str]) -> str:
-    return "".join(f'<span class="table-chip">{escape(table)}</span>' for table in tables)
-
-
-@router.get("/dashboard/summary")
-def dashboard_summary() -> dict[str, Any]:
+@router.get("/dashboard/summary", response_model=TexasDashboardSummaryResponse)
+def dashboard_summary() -> TexasDashboardSummaryResponse:
     settings = get_settings()
-    return _build_dashboard_summary(settings)
+    summary = _build_dashboard_summary(settings)
+    return TexasDashboardSummaryResponse.model_validate(summary)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -521,51 +464,49 @@ def landing_page() -> str:
     settings = get_settings()
     summary = _build_dashboard_summary(settings)
     monitoring = summary["monitoring"]
-    app_name = escape(summary["display_name"])
-    environment = escape(summary["environment"].upper())
-    version = escape(summary["version"])
-    generated_at = escape(summary["generated_at"])
-    auth_mode = (
-        "Header RBAC active"
-        if summary["auth"]["enabled"]
-        else "Local development open mode"
-    )
+    coverage = summary["data_coverage"]
+
+    metrics_html = _render_metric_cards(summary["metrics"])
+    featured_html = _render_featured_cards(summary["featured_opportunities"])
+    corridor_html = _render_corridor_rows(summary["corridors"])
+    opportunity_rows_html = _render_opportunity_rows(summary["opportunities"])
+    map_points_html = _render_map_points(summary["opportunities"])
+    map_labels_html = _render_map_labels(summary["featured_opportunities"])
+    metro_options_html = _render_filter_options(summary["filters"]["metros"])
+    stage_options_html = _render_filter_options(summary["filters"]["readiness_stages"])
+    university_options_html = _render_filter_options(summary["filters"]["university_anchors"])
+    phase_totals_html = _render_phase_totals(coverage.get("phase_totals", []))
+    payload_json = _json_for_html(summary)
+
     monitoring_status = (
-        "Live feed active" if monitoring["available"] else "Monitoring unavailable"
+        "Live pipeline feed active" if monitoring["available"] else "Monitoring unavailable"
     )
-    monitoring_status_class = "is-live" if monitoring["available"] else "is-down"
-    latest_batch = monitoring["latest_batch"]
-    latest_batch_status = (
+    monitoring_class = "live" if monitoring["available"] else "down"
+    latest_batch = monitoring.get("latest_batch")
+    latest_batch_label = (
         latest_batch["status"].replace("_", " ").title()
         if latest_batch is not None
-        else "No batch activity"
+        else "No live batch"
     )
-    latest_batch_identifier = (
-        latest_batch["batch_id"] if latest_batch is not None else "Awaiting first batch"
-    )
-    latest_batch_progress = (
+    latest_batch_detail = (
         f'{latest_batch["completed_metros"]}/{latest_batch["expected_metros"]} metros complete'
         if latest_batch is not None
-        else "No orchestration runs have completed yet."
+        else "Parcel scoring has not activated a batch yet."
     )
-    freshness_label = "Not scoped"
-    if monitoring["freshness"] is not None:
+    freshness_label = "Freshness not scoped"
+    if monitoring.get("freshness") is not None:
         freshness_label = (
             "Freshness passed"
             if monitoring["freshness"]["passed"]
             else f'Freshness failures: {monitoring["freshness"]["failed_count"]}'
         )
-    monitoring_note = (
-        monitoring["error"]
-        or "Polling the live monitoring summary every 15 seconds."
+
+    coverage_status = "Authoritative source inventory loaded" if coverage["available"] else "Source inventory unavailable"
+    coverage_note = coverage["error"] or (
+        f'{coverage["free_sources"]} free sources across 3 build phases.'
+        if coverage["available"]
+        else "Dashboard is running without source inventory metadata."
     )
-    metric_cards = _render_metric_cards(summary)
-    phase_cards = _render_phase_cards(summary["domains"])
-    heat_rows = _render_heat_rows(summary["domains"])
-    domain_tiles = _render_domain_tiles(summary["domains"])
-    tripwire_cards = _render_tripwire_cards(summary["tripwires"])
-    auth_rows = _render_auth_rows(summary)
-    table_chips = _render_table_chips(summary["managed_tables"])
 
     return f"""
     <!doctype html>
@@ -573,26 +514,28 @@ def landing_page() -> str:
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>{app_name} Command Center</title>
+        <title>{escape(summary["display_name"])}</title>
         <style>
           :root {{
             color-scheme: light;
-            --bg: #f4efe4;
-            --ink: #0b2239;
-            --muted: #4d6378;
-            --panel: rgba(255, 251, 244, 0.82);
-            --panel-strong: rgba(255, 251, 244, 0.94);
-            --line: rgba(11, 34, 57, 0.12);
-            --lagoon: #0e7490;
-            --marine: #12456b;
-            --citrus: #c08412;
-            --ember: #d97706;
-            --sky: #0284c7;
-            --signal: #0f766e;
-            --graphite: #475569;
-            --aurora: #0891b2;
-            --shadow: 0 26px 90px rgba(11, 34, 57, 0.14);
-            font-family: "Aptos", "Trebuchet MS", "Segoe UI", sans-serif;
+            --bg: #f5efe1;
+            --ink: #102438;
+            --muted: #5f6f7f;
+            --paper: rgba(255, 250, 240, 0.9);
+            --paper-strong: rgba(255, 252, 247, 0.96);
+            --line: rgba(16, 36, 56, 0.12);
+            --shadow: 0 30px 90px rgba(16, 36, 56, 0.14);
+            --teal: #0f766e;
+            --navy: #153b5c;
+            --gold: #b7791f;
+            --rust: #b45309;
+            --sage: #5b7553;
+            --cream: #fffaf2;
+            --danger: #b91c1c;
+            --tier1: #0f766e;
+            --tier2: #c08124;
+            --tier3: #64748b;
+            font-family: "Aptos", "Segoe UI", sans-serif;
           }}
 
           * {{
@@ -601,9 +544,9 @@ def landing_page() -> str:
 
           html {{
             background:
-              radial-gradient(circle at top left, rgba(14, 116, 144, 0.24), transparent 28%),
-              radial-gradient(circle at bottom right, rgba(217, 119, 6, 0.18), transparent 26%),
-              linear-gradient(180deg, #fbf7ef 0%, #f4efe4 52%, #efe7d8 100%);
+              radial-gradient(circle at top left, rgba(15, 118, 110, 0.2), transparent 28%),
+              radial-gradient(circle at top right, rgba(180, 83, 9, 0.16), transparent 24%),
+              linear-gradient(180deg, #fbf7ee 0%, #f5efe1 54%, #efe6d3 100%);
           }}
 
           body {{
@@ -611,9 +554,9 @@ def landing_page() -> str:
             min-height: 100vh;
             color: var(--ink);
             background:
-              linear-gradient(rgba(11, 34, 57, 0.03) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(11, 34, 57, 0.03) 1px, transparent 1px);
-            background-size: 28px 28px;
+              linear-gradient(rgba(16, 36, 56, 0.03) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(16, 36, 56, 0.03) 1px, transparent 1px);
+            background-size: 30px 30px;
             padding: 28px;
           }}
 
@@ -621,25 +564,26 @@ def landing_page() -> str:
           body::after {{
             content: "";
             position: fixed;
-            width: 42vw;
-            height: 42vw;
+            inset: auto;
+            width: 36vw;
+            height: 36vw;
             border-radius: 50%;
-            filter: blur(40px);
-            opacity: 0.48;
+            filter: blur(48px);
+            opacity: 0.4;
             pointer-events: none;
             z-index: 0;
           }}
 
           body::before {{
-            top: -14vw;
+            top: -10vw;
             left: -8vw;
-            background: rgba(8, 145, 178, 0.18);
+            background: rgba(15, 118, 110, 0.18);
           }}
 
           body::after {{
-            bottom: -18vw;
-            right: -10vw;
-            background: rgba(217, 119, 6, 0.16);
+            right: -8vw;
+            bottom: -12vw;
+            background: rgba(180, 83, 9, 0.15);
           }}
 
           a {{
@@ -647,48 +591,46 @@ def landing_page() -> str:
             text-decoration: none;
           }}
 
-          .dashboard-shell {{
+          .page-shell {{
             position: relative;
             z-index: 1;
-            width: min(1480px, 100%);
+            width: min(1500px, 100%);
             margin: 0 auto;
             display: grid;
             gap: 20px;
           }}
 
-          .hero {{
-            display: grid;
-            grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
-            gap: 20px;
-          }}
-
-          .hero-copy,
-          .hero-visual,
           .panel,
+          .hero-copy,
+          .hero-map,
           .metric-card {{
-            background: var(--panel);
-            backdrop-filter: blur(14px);
+            background: var(--paper);
             border: 1px solid var(--line);
             border-radius: 28px;
             box-shadow: var(--shadow);
+            backdrop-filter: blur(16px);
+          }}
+
+          .hero {{
+            display: grid;
+            grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+            gap: 20px;
           }}
 
           .hero-copy {{
-            padding: 32px;
-            position: relative;
+            padding: 34px;
             overflow: hidden;
+            position: relative;
           }}
 
-          .hero-copy::after {{
+          .hero-copy::before {{
             content: "";
             position: absolute;
-            right: -12%;
-            bottom: -35%;
-            width: 300px;
-            height: 300px;
-            border-radius: 50%;
+            inset: 0;
             background:
-              radial-gradient(circle, rgba(14, 116, 144, 0.22) 0%, rgba(14, 116, 144, 0) 68%);
+              radial-gradient(circle at top left, rgba(15, 118, 110, 0.1), transparent 32%),
+              radial-gradient(circle at bottom right, rgba(180, 83, 9, 0.1), transparent 28%);
+            pointer-events: none;
           }}
 
           .eyebrow {{
@@ -697,1403 +639,991 @@ def landing_page() -> str:
             gap: 10px;
             text-transform: uppercase;
             letter-spacing: 0.16em;
-            font-size: 0.76rem;
+            font-size: 0.74rem;
+            color: var(--teal);
             font-weight: 700;
-            color: var(--lagoon);
           }}
 
           .eyebrow::before {{
             content: "";
-            width: 34px;
-            height: 2px;
-            background: linear-gradient(90deg, var(--lagoon), rgba(14, 116, 144, 0.1));
+            width: 40px;
+            height: 1px;
+            background: currentColor;
           }}
 
-          h1 {{
-            margin: 18px 0 14px;
-            font-size: clamp(2.8rem, 5vw, 5.4rem);
-            line-height: 0.96;
-            letter-spacing: -0.05em;
-            max-width: 10ch;
+          h1,
+          h2,
+          h3 {{
+            margin: 0;
+            font-family: "Georgia", "Times New Roman", serif;
+            letter-spacing: -0.03em;
           }}
 
-          .lede {{
-            margin: 0 0 24px;
-            max-width: 62ch;
+          .hero-copy h1 {{
+            margin-top: 18px;
+            max-width: 13ch;
+            font-size: clamp(2.8rem, 5vw, 5rem);
+            line-height: 0.95;
+          }}
+
+          .hero-copy p {{
+            max-width: 60ch;
+            margin: 20px 0 0;
             color: var(--muted);
-            line-height: 1.65;
-            font-size: 1.02rem;
-          }}
-
-          .pill-row,
-          .hero-actions,
-          .metric-strip,
-          .lower-grid,
-          .secondary-grid {{
-            display: grid;
-            gap: 14px;
-          }}
-
-          .pill-row {{
-            grid-template-columns: repeat(auto-fit, minmax(180px, max-content));
-            margin-bottom: 26px;
-          }}
-
-          .pill {{
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            padding: 12px 16px;
-            border-radius: 999px;
-            border: 1px solid rgba(11, 34, 57, 0.1);
-            background: rgba(255, 255, 255, 0.62);
-            font-size: 0.92rem;
-            font-weight: 600;
-            color: var(--ink);
-          }}
-
-          .pill::before {{
-            content: "";
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: linear-gradient(180deg, var(--lagoon), var(--sky));
-            box-shadow: 0 0 0 6px rgba(14, 116, 144, 0.14);
+            font-size: 1.05rem;
+            line-height: 1.7;
           }}
 
           .hero-actions {{
-            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-          }}
-
-          .action-link {{
-            padding: 18px;
-            border-radius: 22px;
-            border: 1px solid rgba(11, 34, 57, 0.08);
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(240, 249, 255, 0.92));
-            transition:
-              transform 0.18s ease,
-              box-shadow 0.18s ease,
-              border-color 0.18s ease;
-          }}
-
-          .action-link:hover {{
-            transform: translateY(-3px);
-            border-color: rgba(14, 116, 144, 0.28);
-            box-shadow: 0 18px 36px rgba(14, 116, 144, 0.12);
-          }}
-
-          .action-link strong,
-          .launch-link strong,
-          .tripwire-card strong,
-          .metric-card strong,
-          .domain-tile strong,
-          .phase-meta strong,
-          .radar-readout strong {{
-            display: block;
-          }}
-
-          .action-link small,
-          .metric-card p,
-          .phase-copy p,
-          .domain-tile p,
-          .tripwire-card p,
-          .launch-link small {{
-            color: var(--muted);
-            line-height: 1.55;
-          }}
-
-          .hero-visual {{
-            padding: 24px;
-            display: grid;
-            gap: 18px;
-          }}
-
-          .radar-stage {{
-            position: relative;
-            min-height: 320px;
-            border-radius: 28px;
-            overflow: hidden;
-            background:
-              radial-gradient(circle at center, rgba(255, 255, 255, 0.96) 0%, rgba(223, 242, 247, 0.88) 42%, rgba(11, 34, 57, 0.06) 100%),
-              linear-gradient(180deg, rgba(8, 145, 178, 0.12), rgba(217, 119, 6, 0.12));
-            border: 1px solid rgba(11, 34, 57, 0.08);
-          }}
-
-          .radar-stage::before,
-          .radar-stage::after {{
-            content: "";
-            position: absolute;
-            inset: 12%;
-            border-radius: 50%;
-            border: 1px dashed rgba(11, 34, 57, 0.14);
-          }}
-
-          .radar-stage::after {{
-            inset: 23%;
-          }}
-
-          .ring {{
-            position: absolute;
-            border-radius: 50%;
-            border: 1px solid rgba(11, 34, 57, 0.12);
-          }}
-
-          .ring-a {{
-            inset: 10%;
-          }}
-
-          .ring-b {{
-            inset: 22%;
-          }}
-
-          .ring-c {{
-            inset: 34%;
-          }}
-
-          .sweep {{
-            position: absolute;
-            inset: 0;
-            background: conic-gradient(from 110deg, transparent 0deg, transparent 248deg, rgba(14, 116, 144, 0.28) 310deg, transparent 360deg);
-            animation: sweep 6s linear infinite;
-          }}
-
-          .node {{
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            background: white;
-            border: 4px solid var(--lagoon);
-            box-shadow: 0 0 0 10px rgba(14, 116, 144, 0.12);
-            animation: pulse 2.8s ease-in-out infinite;
-          }}
-
-          .node-a {{
-            top: 22%;
-            left: 18%;
-          }}
-
-          .node-b {{
-            top: 30%;
-            right: 24%;
-            border-color: var(--ember);
-            box-shadow: 0 0 0 10px rgba(217, 119, 6, 0.14);
-          }}
-
-          .node-c {{
-            bottom: 24%;
-            left: 28%;
-            border-color: var(--marine);
-            box-shadow: 0 0 0 10px rgba(18, 69, 107, 0.12);
-          }}
-
-          .node-d {{
-            bottom: 18%;
-            right: 18%;
-            border-color: var(--signal);
-            box-shadow: 0 0 0 10px rgba(15, 118, 110, 0.12);
-          }}
-
-          .core-readout {{
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-            width: min(240px, 58%);
-            padding: 22px;
-            border-radius: 26px;
-            background: rgba(255, 255, 255, 0.82);
-            border: 1px solid rgba(11, 34, 57, 0.08);
-            text-align: center;
-          }}
-
-          .core-readout span,
-          .metric-card span,
-          .heat-label span,
-          .auth-row span,
-          .domain-tile header span,
-          .tripwire-card span,
-          .launch-link span {{
-            display: block;
-            font-size: 0.8rem;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: var(--muted);
-          }}
-
-          .core-readout strong {{
-            margin-top: 8px;
-            font-size: 2rem;
-            letter-spacing: -0.04em;
-          }}
-
-          .core-readout small {{
-            display: block;
-            margin-top: 10px;
-            color: var(--muted);
-            line-height: 1.5;
-          }}
-
-          .radar-readout {{
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            margin-top: 26px;
+            display: flex;
+            flex-wrap: wrap;
             gap: 12px;
           }}
 
-          .radar-readout article {{
-            padding: 14px 16px;
-            border-radius: 20px;
-            background: rgba(255, 255, 255, 0.7);
-            border: 1px solid rgba(11, 34, 57, 0.08);
+          .hero-link {{
+            padding: 12px 18px;
+            border-radius: 999px;
+            border: 1px solid rgba(16, 36, 56, 0.12);
+            font-weight: 700;
+            background: rgba(255, 255, 255, 0.66);
           }}
 
-          .radar-readout strong {{
-            margin-top: 8px;
-            font-size: 1rem;
-            line-height: 1.35;
+          .hero-link.primary {{
+            background: linear-gradient(135deg, #124a61, #0f766e);
+            color: white;
+            border-color: transparent;
           }}
 
-          .metric-strip {{
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+          .hero-kpis {{
+            margin-top: 28px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 18px;
+          }}
+
+          .hero-kpis article {{
+            min-width: 140px;
+          }}
+
+          .hero-kpis strong {{
+            display: block;
+            font-size: 1.9rem;
+            line-height: 1;
+          }}
+
+          .hero-kpis span {{
+            color: var(--muted);
+            font-size: 0.92rem;
+          }}
+
+          .hero-meta {{
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            color: var(--muted);
+            font-size: 0.9rem;
+          }}
+
+          .meta-pill {{
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.76);
+            border: 1px solid rgba(16, 36, 56, 0.1);
+          }}
+
+          .hero-map {{
+            padding: 24px;
+            display: grid;
+            gap: 16px;
+          }}
+
+          .hero-map header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 12px;
+          }}
+
+          .hero-map header h2 {{
+            font-size: 1.6rem;
+          }}
+
+          .hero-map header span {{
+            color: var(--muted);
+            font-size: 0.92rem;
+          }}
+
+          .map-stage {{
+            width: 100%;
+            min-height: 420px;
+            border-radius: 24px;
+            overflow: hidden;
+            background:
+              radial-gradient(circle at 22% 24%, rgba(15, 118, 110, 0.14), transparent 18%),
+              radial-gradient(circle at 78% 70%, rgba(180, 83, 9, 0.12), transparent 20%),
+              linear-gradient(180deg, rgba(21, 59, 92, 0.08), rgba(255, 255, 255, 0.12)),
+              #f6efdf;
+            border: 1px solid rgba(16, 36, 56, 0.08);
+            position: relative;
+          }}
+
+          .map-stage svg {{
+            width: 100%;
+            height: 100%;
+            display: block;
+          }}
+
+          .map-outline {{
+            fill: rgba(21, 59, 92, 0.08);
+            stroke: rgba(21, 59, 92, 0.35);
+            stroke-width: 1.8;
+          }}
+
+          .map-grid {{
+            stroke: rgba(21, 59, 92, 0.08);
+            stroke-dasharray: 3 6;
+          }}
+
+          .map-point {{
+            stroke: rgba(255, 255, 255, 0.85);
+            stroke-width: 1.2;
+            opacity: 0.96;
+          }}
+
+          .map-point.tier-1 {{
+            fill: var(--tier1);
+          }}
+
+          .map-point.tier-2 {{
+            fill: var(--tier2);
+          }}
+
+          .map-point.tier-3 {{
+            fill: var(--tier3);
+          }}
+
+          .map-label text {{
+            fill: var(--navy);
+            font-size: 3.2px;
+            font-weight: 700;
+            paint-order: stroke;
+            stroke: rgba(255, 250, 240, 0.92);
+            stroke-width: 1;
+            stroke-linecap: round;
+          }}
+
+          .map-legend {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            color: var(--muted);
+            font-size: 0.88rem;
+          }}
+
+          .map-legend span {{
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+          }}
+
+          .map-legend i {{
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+          }}
+
+          .metrics-grid {{
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 16px;
           }}
 
           .metric-card {{
             padding: 22px;
-            position: relative;
-            overflow: hidden;
-          }}
-
-          .metric-card::after {{
-            content: "";
-            position: absolute;
-            right: -12%;
-            bottom: -35%;
-            width: 170px;
-            height: 170px;
-            border-radius: 50%;
-            opacity: 0.32;
-          }}
-
-          .metric-card strong {{
-            margin: 12px 0 10px;
-            font-size: clamp(2rem, 3vw, 3rem);
-            line-height: 0.95;
-            letter-spacing: -0.05em;
-          }}
-
-          .monitoring-grid {{
             display: grid;
-            grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr);
-            gap: 20px;
-          }}
-
-          .monitoring-head {{
-            display: flex;
-            justify-content: space-between;
-            gap: 18px;
-            align-items: start;
-            margin-bottom: 18px;
-          }}
-
-          .monitoring-badges {{
-            display: flex;
-            flex-wrap: wrap;
             gap: 10px;
-            justify-content: end;
           }}
 
-          .monitor-badge {{
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 14px;
-            border-radius: 999px;
-            border: 1px solid rgba(11, 34, 57, 0.08);
-            background: rgba(255, 255, 255, 0.72);
-            font-size: 0.82rem;
-            font-weight: 700;
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
+          .metric-card span {{
             color: var(--muted);
-          }}
-
-          .monitor-badge::before {{
-            content: "";
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: rgba(100, 116, 139, 0.5);
-          }}
-
-          .monitor-badge.is-live::before {{
-            background: #10b981;
-            box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.15);
-          }}
-
-          .monitor-badge.is-down::before {{
-            background: #dc2626;
-            box-shadow: 0 0 0 6px rgba(220, 38, 38, 0.12);
-          }}
-
-          .signal-grid {{
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 14px;
-            margin-bottom: 18px;
-          }}
-
-          .signal-card {{
-            padding: 18px;
-            border-radius: 22px;
-            border: 1px solid rgba(11, 34, 57, 0.08);
-            background: linear-gradient(
-              180deg,
-              rgba(255, 255, 255, 0.88),
-              rgba(246, 250, 252, 0.78)
-            );
-          }}
-
-          .signal-card span,
-          .lane-card h3,
-          .feed-column h3,
-          .latest-batch-card span {{
-            display: block;
-            font-size: 0.8rem;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: var(--muted);
-          }}
-
-          .signal-card strong {{
-            display: block;
-            margin: 12px 0 8px;
-            font-size: 2rem;
-            line-height: 0.95;
-            letter-spacing: -0.05em;
-          }}
-
-          .signal-card small,
-          .latest-batch-card small {{
-            display: block;
-            color: var(--muted);
-            line-height: 1.5;
-          }}
-
-          .lane-grid {{
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 14px;
-          }}
-
-          .lane-card,
-          .latest-batch-card,
-          .feed-column {{
-            padding: 18px;
-            border-radius: 22px;
-            border: 1px solid rgba(11, 34, 57, 0.08);
-            background: rgba(255, 255, 255, 0.72);
-          }}
-
-          .lane-card h3,
-          .feed-column h3 {{
-            margin: 0 0 14px;
-          }}
-
-          .lane-list,
-          .feed-list {{
-            display: grid;
-            gap: 12px;
-          }}
-
-          .lane-row {{
-            display: grid;
-            gap: 8px;
-          }}
-
-          .lane-row header {{
-            display: flex;
-            justify-content: space-between;
-            gap: 10px;
-            align-items: baseline;
-          }}
-
-          .lane-row strong {{
-            font-size: 0.95rem;
-          }}
-
-          .lane-row small {{
-            color: var(--muted);
-          }}
-
-          .lane-track {{
-            height: 10px;
-            border-radius: 999px;
-            background: rgba(11, 34, 57, 0.08);
-            overflow: hidden;
-          }}
-
-          .lane-fill {{
-            display: block;
-            height: 100%;
-            border-radius: inherit;
-            background: linear-gradient(90deg, var(--lagoon), var(--sky));
-          }}
-
-          .lane-fill.failed,
-          .threshold-chip.is-triggered {{
-            background: linear-gradient(90deg, #b91c1c, #ef4444);
-          }}
-
-          .lane-fill.completed {{
-            background: linear-gradient(90deg, #0f766e, #14b8a6);
-          }}
-
-          .lane-fill.active {{
-            background: linear-gradient(90deg, #0e7490, #06b6d4);
-          }}
-
-          .lane-fill.building,
-          .lane-fill.running {{
-            background: linear-gradient(90deg, #c08412, #f59e0b);
-          }}
-
-          .threshold-chip {{
-            display: grid;
-            gap: 4px;
-            padding: 12px 14px;
-            border-radius: 16px;
-            background: rgba(11, 34, 57, 0.05);
-            border: 1px solid rgba(11, 34, 57, 0.08);
-          }}
-
-          .threshold-chip strong {{
             font-size: 0.9rem;
           }}
 
-          .threshold-chip small {{
+          .metric-card strong {{
+            font-size: 2.3rem;
+            line-height: 1;
+          }}
+
+          .metric-card p {{
+            margin: 0;
             color: var(--muted);
-            line-height: 1.45;
-          }}
-
-          .feed-panel {{
-            display: grid;
-            gap: 14px;
-          }}
-
-          .latest-batch-card strong {{
-            display: block;
-            margin: 10px 0 8px;
-            font-size: 1.4rem;
-            line-height: 1.1;
-          }}
-
-          .feed-columns {{
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 14px;
-          }}
-
-          .feed-item {{
-            display: grid;
-            gap: 6px;
-            padding: 14px;
-            border-radius: 16px;
-            background: rgba(11, 34, 57, 0.05);
-            border: 1px solid rgba(11, 34, 57, 0.08);
-          }}
-
-          .feed-item header {{
-            display: flex;
-            justify-content: space-between;
-            gap: 10px;
-            align-items: start;
-          }}
-
-          .feed-item strong {{
+            line-height: 1.6;
             font-size: 0.95rem;
-            line-height: 1.35;
           }}
 
-          .feed-item code {{
-            width: fit-content;
-            padding: 6px 8px;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.74);
-            border: 1px solid rgba(11, 34, 57, 0.08);
-            font-family: "Cascadia Mono", "Consolas", monospace;
-            font-size: 0.78rem;
-          }}
+          .tone-teal strong {{ color: var(--teal); }}
+          .tone-gold strong {{ color: var(--gold); }}
+          .tone-navy strong {{ color: var(--navy); }}
+          .tone-rust strong {{ color: var(--rust); }}
+          .tone-sage strong {{ color: var(--sage); }}
 
-          .feed-item small {{
-            color: var(--muted);
-            line-height: 1.45;
-          }}
-
-          .feed-empty {{
-            padding: 14px;
-            border-radius: 16px;
-            background: rgba(11, 34, 57, 0.05);
-            border: 1px dashed rgba(11, 34, 57, 0.12);
-            color: var(--muted);
-            line-height: 1.5;
-          }}
-
-          .tone-lagoon::after {{
-            background: radial-gradient(circle, rgba(14, 116, 144, 0.22) 0%, transparent 70%);
-          }}
-
-          .tone-marine::after {{
-            background: radial-gradient(circle, rgba(18, 69, 107, 0.22) 0%, transparent 70%);
-          }}
-
-          .tone-citrus::after {{
-            background: radial-gradient(circle, rgba(192, 132, 18, 0.22) 0%, transparent 70%);
-          }}
-
-          .tone-ember::after {{
-            background: radial-gradient(circle, rgba(217, 119, 6, 0.22) 0%, transparent 70%);
-          }}
-
-          .lower-grid {{
-            grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
-          }}
-
-          .secondary-grid {{
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+          .insight-grid {{
+            display: grid;
+            grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+            gap: 20px;
           }}
 
           .panel {{
             padding: 24px;
           }}
 
-          .panel h2 {{
-            margin: 0 0 8px;
-            font-size: 1.4rem;
-            letter-spacing: -0.03em;
+          .panel-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: end;
+            gap: 14px;
+            margin-bottom: 18px;
           }}
 
-          .panel-copy {{
-            margin: 0 0 18px;
+          .panel-header p {{
+            margin: 8px 0 0;
             color: var(--muted);
-            line-height: 1.55;
+            line-height: 1.6;
+          }}
+
+          .featured-grid {{
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+          }}
+
+          .featured-card {{
+            display: grid;
+            grid-template-columns: 88px minmax(0, 1fr);
+            gap: 16px;
+            padding: 18px;
+            border: 1px solid rgba(16, 36, 56, 0.08);
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.7);
+          }}
+
+          .featured-score {{
+            width: 88px;
+            height: 88px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            align-content: center;
+            background: conic-gradient(var(--teal), rgba(15, 118, 110, 0.18));
+            color: white;
+            text-align: center;
+          }}
+
+          .featured-score span {{
+            font-size: 0.74rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+          }}
+
+          .featured-score strong {{
+            font-size: 2rem;
+            line-height: 1;
+          }}
+
+          .featured-copy header {{
+            display: grid;
+            gap: 4px;
+          }}
+
+          .featured-copy small,
+          .featured-meta span {{
+            color: var(--muted);
+          }}
+
+          .featured-copy p {{
+            margin: 12px 0;
+            color: var(--muted);
+            line-height: 1.6;
+          }}
+
+          .featured-meta {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            font-size: 0.9rem;
+          }}
+
+          .strength-list {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+          }}
+
+          .strength-chip {{
+            padding: 7px 10px;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            background: rgba(15, 118, 110, 0.09);
+            color: var(--navy);
+          }}
+
+          .telemetry-grid {{
+            display: grid;
+            gap: 16px;
+          }}
+
+          .telemetry-card {{
+            padding: 18px;
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(16, 36, 56, 0.08);
+            display: grid;
+            gap: 14px;
+          }}
+
+          .status-pill {{
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            font-weight: 700;
+            width: fit-content;
+          }}
+
+          .status-pill.live {{
+            background: rgba(15, 118, 110, 0.12);
+            color: var(--teal);
+          }}
+
+          .status-pill.down {{
+            background: rgba(185, 28, 28, 0.1);
+            color: var(--danger);
+          }}
+
+          .mini-metrics {{
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+          }}
+
+          .mini-metrics article {{
+            padding: 12px 14px;
+            border-radius: 18px;
+            background: rgba(16, 36, 56, 0.04);
+          }}
+
+          .mini-metrics span,
+          .note {{
+            color: var(--muted);
+          }}
+
+          .mini-metrics strong {{
+            display: block;
+            margin-top: 6px;
+            font-size: 1.5rem;
+          }}
+
+          .corridor-stack {{
+            display: grid;
+            gap: 12px;
+          }}
+
+          .corridor-row {{
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 120px;
+            gap: 16px;
+            padding: 14px 16px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(16, 36, 56, 0.08);
+          }}
+
+          .corridor-copy header {{
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 6px;
+          }}
+
+          .corridor-copy span,
+          .corridor-copy small {{
+            color: var(--muted);
+          }}
+
+          .corridor-meter {{
+            display: grid;
+            gap: 8px;
+            align-content: center;
+          }}
+
+          .corridor-track {{
+            height: 12px;
+            border-radius: 999px;
+            background: rgba(16, 36, 56, 0.08);
+            overflow: hidden;
+          }}
+
+          .corridor-fill {{
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--gold), var(--teal));
+          }}
+
+          .coverage-shell {{
+            display: grid;
+            gap: 16px;
           }}
 
           .phase-grid {{
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 14px;
-          }}
-
-          .phase-card {{
-            padding: 18px;
-            border-radius: 24px;
-            border: 1px solid rgba(11, 34, 57, 0.08);
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 250, 252, 0.82));
-            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 12px;
-            min-height: 170px;
           }}
 
-          .phase-index {{
-            width: fit-content;
-            padding: 8px 10px;
-            border-radius: 999px;
-            background: rgba(11, 34, 57, 0.06);
-            font-size: 0.82rem;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
+          .phase-pill {{
+            padding: 14px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(16, 36, 56, 0.08);
+            display: grid;
+            gap: 4px;
           }}
 
-          .phase-copy h3 {{
-            margin: 0 0 8px;
-            font-size: 1.05rem;
-          }}
-
-          .phase-copy p,
-          .phase-meta small,
-          .heat-label strong,
-          .auth-note,
-          .table-note {{
-            margin: 0;
+          .phase-pill span,
+          .phase-pill small {{
             color: var(--muted);
           }}
 
-          .phase-meta {{
+          .catalog-shell {{
+            display: grid;
+            gap: 18px;
+          }}
+
+          .catalog-header {{
             display: flex;
             justify-content: space-between;
-            gap: 14px;
             align-items: end;
-            margin-top: auto;
+            gap: 18px;
           }}
 
-          .heat-stack {{
-            display: grid;
-            gap: 14px;
+          .catalog-header p {{
+            margin: 8px 0 0;
+            color: var(--muted);
           }}
 
-          .heat-row {{
-            display: grid;
+          .filters {{
+            display: flex;
+            flex-wrap: wrap;
             gap: 10px;
           }}
 
-          .heat-label {{
-            display: flex;
-            justify-content: space-between;
-            gap: 16px;
-            align-items: baseline;
-          }}
-
-          .heat-label strong {{
-            font-size: 0.95rem;
-          }}
-
-          .heat-bar {{
-            height: 12px;
+          .filters input,
+          .filters select {{
+            min-width: 180px;
+            padding: 12px 14px;
             border-radius: 999px;
-            overflow: hidden;
-            background: rgba(11, 34, 57, 0.08);
-          }}
-
-          .heat-fill {{
-            display: block;
-            height: 100%;
-            border-radius: inherit;
-            background: linear-gradient(90deg, var(--marine), var(--lagoon));
-            box-shadow: inset 0 0 12px rgba(255, 255, 255, 0.3);
-          }}
-
-          .heat-fill.tone-citrus {{
-            background: linear-gradient(90deg, #b45309, #d97706);
-          }}
-
-          .heat-fill.tone-ember {{
-            background: linear-gradient(90deg, #c2410c, #ea580c);
-          }}
-
-          .heat-fill.tone-sky,
-          .heat-fill.tone-aurora {{
-            background: linear-gradient(90deg, #0284c7, #0891b2);
-          }}
-
-          .heat-fill.tone-signal {{
-            background: linear-gradient(90deg, #0f766e, #14b8a6);
-          }}
-
-          .heat-fill.tone-graphite {{
-            background: linear-gradient(90deg, #334155, #64748b);
-          }}
-
-          .domain-grid {{
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 14px;
-          }}
-
-          .domain-tile {{
-            padding: 18px;
-            border-radius: 24px;
-            border: 1px solid rgba(11, 34, 57, 0.08);
-            background: rgba(255, 255, 255, 0.76);
-          }}
-
-          .domain-tile header {{
-            display: flex;
-            justify-content: space-between;
-            gap: 14px;
-            align-items: end;
-            margin-bottom: 12px;
-          }}
-
-          .path-cluster {{
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-          }}
-
-          .path-cluster code,
-          .table-chip,
-          .auth-row code {{
-            display: inline-flex;
-            align-items: center;
-            padding: 8px 10px;
-            border-radius: 12px;
-            background: rgba(11, 34, 57, 0.06);
-            border: 1px solid rgba(11, 34, 57, 0.08);
-            font-family: "Cascadia Mono", "Consolas", monospace;
-            font-size: 0.82rem;
+            border: 1px solid rgba(16, 36, 56, 0.12);
+            background: rgba(255, 255, 255, 0.88);
             color: var(--ink);
           }}
 
-          .auth-stack,
-          .tripwire-grid,
-          .launch-grid {{
-            display: grid;
-            gap: 12px;
+          .table-shell {{
+            overflow: auto;
+            border-radius: 22px;
+            border: 1px solid rgba(16, 36, 56, 0.08);
+            background: rgba(255, 255, 255, 0.72);
           }}
 
-          .auth-row {{
-            display: flex;
-            justify-content: space-between;
-            gap: 14px;
+          table {{
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 960px;
+          }}
+
+          th,
+          td {{
+            padding: 16px 18px;
+            text-align: left;
+            border-bottom: 1px solid rgba(16, 36, 56, 0.08);
+            vertical-align: top;
+          }}
+
+          th {{
+            position: sticky;
+            top: 0;
+            background: rgba(255, 250, 240, 0.96);
+            font-size: 0.78rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+            z-index: 1;
+          }}
+
+          tbody tr:last-child td {{
+            border-bottom: 0;
+          }}
+
+          .opportunity-row.is-hidden {{
+            display: none;
+          }}
+
+          .rank-pill,
+          .stage-chip {{
+            display: inline-flex;
             align-items: center;
-            padding: 14px 16px;
-            border-radius: 18px;
-            background: rgba(255, 255, 255, 0.68);
-            border: 1px solid rgba(11, 34, 57, 0.08);
+            justify-content: center;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(16, 36, 56, 0.06);
+            font-weight: 700;
           }}
 
-          .auth-row span {{
-            font-size: 0.75rem;
+          .site-cell,
+          .score-cell,
+          .distance-cell {{
+            display: grid;
+            gap: 4px;
           }}
 
-          .auth-row code {{
-            text-align: right;
+          .site-cell span,
+          .site-cell small,
+          .score-cell small,
+          .distance-cell small {{
+            color: var(--muted);
           }}
 
-          .auth-note,
-          .table-note {{
-            line-height: 1.55;
-          }}
-
-          .tripwire-grid {{
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            margin-top: 18px;
-          }}
-
-          .tripwire-card {{
-            padding: 16px;
-            border-radius: 20px;
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(246, 250, 252, 0.76));
-            border: 1px solid rgba(11, 34, 57, 0.08);
-          }}
-
-          .tripwire-card span {{
-            margin: 8px 0 10px;
-            color: var(--ember);
-          }}
-
-          .table-cloud {{
+          .footer-bar {{
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
-            max-height: 270px;
-            overflow: auto;
-            padding-right: 4px;
-          }}
-
-          .launch-grid {{
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }}
-
-          .launch-link {{
-            padding: 18px;
-            border-radius: 22px;
-            border: 1px solid rgba(11, 34, 57, 0.08);
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(240, 249, 255, 0.78));
-            min-height: 136px;
-          }}
-
-          .launch-link strong {{
-            margin: 10px 0 12px;
-            font-size: 1.08rem;
-          }}
-
-          .footer-note {{
-            display: flex;
             justify-content: space-between;
             gap: 14px;
-            align-items: center;
-            padding: 18px 22px;
-            border-radius: 22px;
-            border: 1px solid var(--line);
-            background: var(--panel-strong);
             color: var(--muted);
             font-size: 0.92rem;
           }}
 
-          @keyframes pulse {{
-            0%, 100% {{
-              transform: scale(1);
-              opacity: 1;
-            }}
-
-            50% {{
-              transform: scale(1.18);
-              opacity: 0.82;
-            }}
+          .footer-links {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
           }}
 
-          @keyframes sweep {{
-            from {{
-              transform: rotate(0deg);
-            }}
-
-            to {{
-              transform: rotate(360deg);
-            }}
+          .footer-links a {{
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(16, 36, 56, 0.1);
           }}
 
           @media (max-width: 1180px) {{
             .hero,
-            .monitoring-grid,
-            .lower-grid,
-            .secondary-grid,
-            .metric-strip {{
+            .insight-grid {{
               grid-template-columns: 1fr;
             }}
 
-            .signal-grid,
-            .lane-grid,
-            .feed-columns,
-            .launch-grid,
-            .tripwire-grid,
-            .domain-grid,
-            .phase-grid,
-            .radar-readout {{
-              grid-template-columns: 1fr;
+            .metrics-grid,
+            .phase-grid {{
+              grid-template-columns: repeat(2, minmax(0, 1fr));
             }}
           }}
 
-          @media (max-width: 760px) {{
+          @media (max-width: 860px) {{
             body {{
               padding: 16px;
             }}
 
-            .hero-copy,
-            .hero-visual,
-            .panel,
-            .metric-card {{
-              border-radius: 22px;
+            .metrics-grid,
+            .featured-grid,
+            .mini-metrics,
+            .phase-grid {{
+              grid-template-columns: 1fr;
             }}
 
-            h1 {{
-              max-width: none;
+            .catalog-header {{
+              align-items: start;
+            }}
+
+            .filters {{
+              width: 100%;
+            }}
+
+            .filters input,
+            .filters select {{
+              width: 100%;
             }}
           }}
         </style>
       </head>
       <body>
-        <main class="dashboard-shell">
+        <div class="page-shell">
           <section class="hero">
-            <section class="hero-copy">
-              <span class="eyebrow">Dense Data Center Locator</span>
-              <h1>Operations Command Center</h1>
-              <p class="lede">
-                A single visual surface for the locator platform: source intake,
-                evaluation, scoring, orchestration, monitoring, audit, and UAT
-                release flow all mapped into one live-ready control plane.
-              </p>
-              <div class="pill-row">
-                <div class="pill">Environment {environment}</div>
-                <div class="pill">Version <span id="version-pill">{version}</span></div>
-                <div class="pill">{escape(auth_mode)}</div>
-              </div>
+            <div class="hero-copy">
+              <span class="eyebrow">Texas Data Center Siting Dashboard</span>
+              <h1>{escape(summary["hero_title"])}</h1>
+              <p>{escape(summary["hero_subtitle"])}</p>
               <div class="hero-actions">
-                <a class="action-link" href="/docs">
-                  <strong>Explore API Docs</strong>
-                  <small>Jump straight into the FastAPI explorer and inspect every route.</small>
-                </a>
-                <a class="action-link" href="/dashboard/summary">
-                  <strong>Open Dashboard JSON</strong>
-                  <small>Inspect the public summary feed that powers this command center.</small>
-                </a>
-                <a class="action-link" href="/health">
-                  <strong>Check Health</strong>
-                  <small>Confirm the service is reachable before operator workflows begin.</small>
-                </a>
+                <a class="hero-link primary" href="#opportunity-catalogue">Explore the 50-site watchlist</a>
+                <a class="hero-link" href="/dashboard/summary">Open live JSON</a>
+                <a class="hero-link" href="/health">Health check</a>
               </div>
-            </section>
-
-            <section class="hero-visual">
-              <div class="radar-stage" aria-hidden="true">
-                <div class="ring ring-a"></div>
-                <div class="ring ring-b"></div>
-                <div class="ring ring-c"></div>
-                <div class="sweep"></div>
-                <span class="node node-a"></span>
-                <span class="node node-b"></span>
-                <span class="node node-c"></span>
-                <span class="node node-d"></span>
-                <div class="core-readout">
-                  <span>Platform Mesh</span>
-                  <strong>{summary["phase_count"]} Phases Online</strong>
-                  <small>
-                    Foundation, ingestion, evaluation, scoring, orchestration,
-                    monitoring, audit, and UAT release all surfaced here.
-                  </small>
-                </div>
-              </div>
-
-              <div class="radar-readout">
+              <div class="hero-kpis">
                 <article>
-                  <span>Heartbeat</span>
-                  <strong id="heartbeat-status">Checking live status</strong>
+                  <strong>{summary["opportunity_count"]}</strong>
+                  <span>Ranked Texas possibilities</span>
                 </article>
                 <article>
-                  <span>Generated</span>
-                  <strong id="dashboard-clock" data-generated-at="{generated_at}">{generated_at}</strong>
+                  <strong>{summary["priority_now_count"]}</strong>
+                  <span>Priority-now corridors</span>
                 </article>
                 <article>
-                  <span>Scenario Pack</span>
-                  <strong>{escape(summary["runtime"]["scenario_pack_path"])}</strong>
+                  <strong>{summary["top_tier_count"]}</strong>
+                  <span>Tier 1 opportunities</span>
+                </article>
+                <article>
+                  <strong>{summary["corridor_count"]}</strong>
+                  <span>Major state corridors</span>
                 </article>
               </div>
-            </section>
-          </section>
-
-          <section class="metric-strip">
-            {metric_cards}
-          </section>
-
-          <section class="monitoring-grid">
-            <article class="panel">
-              <div class="monitoring-head">
+              <div class="hero-meta">
+                <span class="meta-pill">Mode: {escape(summary["data_mode"])}</span>
+                <span class="meta-pill">Market: {escape(summary["market"])}</span>
+                <span class="meta-pill">Generated: <span id="dashboard-generated">{escape(summary["generated_at"])}</span></span>
+              </div>
+            </div>
+            <div class="hero-map">
+              <header>
                 <div>
-                  <h2>Live Monitoring Pulse</h2>
-                  <p class="panel-copy">
-                    Real pipeline telemetry flowing into the dashboard from the
-                    monitoring service snapshot.
-                  </p>
+                  <h2>Texas Opportunity Field</h2>
+                  <span>Geographic spread of the current customer watchlist.</span>
                 </div>
-                <div class="monitoring-badges">
-                  <span class="monitor-badge {monitoring_status_class}" id="monitoring-status">
-                    {escape(monitoring_status)}
-                  </span>
-                  <span class="monitor-badge" id="monitoring-evaluated">
-                    {escape(monitoring["evaluated_at"])}
-                  </span>
+                <strong>{summary["opportunity_count"]} sites</strong>
+              </header>
+              <div class="map-stage">
+                <svg viewBox="0 0 100 100" role="img" aria-label="Texas opportunity field">
+                  <path class="map-outline" d="M26 8 L43 11 L49 21 L63 21 L72 31 L80 31 L88 38 L84 49 L91 59 L86 83 L71 86 L56 94 L42 82 L37 67 L26 61 L22 46 L11 40 L15 24 L24 18 Z"></path>
+                  <path class="map-grid" d="M12 28 H88 M16 46 H84 M22 64 H80 M30 20 V82 M48 16 V90 M66 22 V88"></path>
+                  {map_points_html}
+                  {map_labels_html}
+                </svg>
+              </div>
+              <div class="map-legend">
+                <span><i style="background: var(--tier1)"></i> Tier 1</span>
+                <span><i style="background: var(--tier2)"></i> Tier 2</span>
+                <span><i style="background: var(--tier3)"></i> Strategic reserve</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="metrics-grid">
+            {metrics_html}
+          </section>
+
+          <section class="insight-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Featured Opportunities</h2>
+                  <p>Highest-scoring sites balancing utility access, fiber reach, land scale, and university talent.</p>
+                </div>
+                <strong>Top 6</strong>
+              </div>
+              <div class="featured-grid">
+                {featured_html}
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="telemetry-grid">
+                <article class="telemetry-card">
+                  <div class="panel-header" style="margin-bottom: 0;">
+                    <div>
+                      <h2>Live Build Telemetry</h2>
+                      <p>Operational read-through from the ingestion and scoring pipeline.</p>
+                    </div>
+                  </div>
+                  <span id="monitoring-status" class="status-pill {monitoring_class}">{escape(monitoring_status)}</span>
+                  <div class="mini-metrics">
+                    <article>
+                      <span>Alerts</span>
+                      <strong id="monitoring-alert-count">{monitoring["alert_count"]}</strong>
+                    </article>
+                    <article>
+                      <span>Source issues</span>
+                      <strong id="monitoring-source-issues">{monitoring["source_issue_count"]}</strong>
+                    </article>
+                    <article>
+                      <span>Failed runs</span>
+                      <strong id="monitoring-failed-runs">{monitoring["failed_run_count"]}</strong>
+                    </article>
+                    <article>
+                      <span>Freshness</span>
+                      <strong id="monitoring-freshness">{escape(freshness_label)}</strong>
+                    </article>
+                  </div>
+                  <div class="note">
+                    <strong id="monitoring-latest-batch">{escape(latest_batch_label)}</strong><br />
+                    <span id="monitoring-latest-batch-detail">{escape(latest_batch_detail)}</span>
+                  </div>
+                  <div class="note" id="monitoring-note">{escape(monitoring["error"] or "Polling live monitoring detail for customer confidence and operator visibility.")}</div>
+                </article>
+
+                <article class="telemetry-card">
+                  <div class="panel-header" style="margin-bottom: 0;">
+                    <div>
+                      <h2>Data Coverage</h2>
+                      <p>Authoritative public-source inventory staged behind the parcel-scoring roadmap.</p>
+                    </div>
+                  </div>
+                  <span id="coverage-status" class="status-pill {'live' if coverage['available'] else 'down'}">{escape(coverage_status)}</span>
+                  <div class="mini-metrics">
+                    <article>
+                      <span>Total sources</span>
+                      <strong id="coverage-total-sources">{coverage["total_sources"]}</strong>
+                    </article>
+                    <article>
+                      <span>Free sources</span>
+                      <strong id="coverage-free-sources">{coverage["free_sources"]}</strong>
+                    </article>
+                    <article>
+                      <span>Config flags</span>
+                      <strong id="coverage-config-flags">{coverage["config_flag_count"]}</strong>
+                    </article>
+                    <article>
+                      <span>Inventory version</span>
+                      <strong id="coverage-version">{escape(coverage["version"] or "unavailable")}</strong>
+                    </article>
+                  </div>
+                  <div class="note" id="coverage-note">{escape(coverage_note)}</div>
+                  <div class="phase-grid" id="coverage-phase-grid">
+                    {phase_totals_html}
+                  </div>
+                </article>
+              </div>
+            </section>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <h2>Corridor Momentum</h2>
+                <p>Corridors ranked by average site viability and immediate build readiness.</p>
+              </div>
+              <strong>{summary["corridor_count"]} corridors</strong>
+            </div>
+            <div class="corridor-stack">
+              {corridor_html}
+            </div>
+          </section>
+
+          <section class="panel" id="opportunity-catalogue">
+            <div class="catalog-shell">
+              <div class="catalog-header">
+                <div>
+                  <h2>Texas Opportunity Catalogue</h2>
+                  <p id="catalogue-count">Showing {summary["opportunity_count"]} of {summary["opportunity_count"]} sites.</p>
+                </div>
+                <div class="filters">
+                  <input id="search-filter" type="search" placeholder="Search city, metro, university, or corridor" />
+                  <select id="metro-filter">
+                    <option value="">All metros</option>
+                    {metro_options_html}
+                  </select>
+                  <select id="stage-filter">
+                    <option value="">All readiness stages</option>
+                    {stage_options_html}
+                  </select>
+                  <select id="university-filter">
+                    <option value="">All university anchors</option>
+                    {university_options_html}
+                  </select>
                 </div>
               </div>
-
-              <div class="signal-grid">
-                <article class="signal-card">
-                  <span>Open Alerts</span>
-                  <strong id="monitoring-alert-count">{monitoring["alert_count"]}</strong>
-                  <small>Current alert load from the monitoring overview.</small>
-                </article>
-                <article class="signal-card">
-                  <span>Triggered Thresholds</span>
-                  <strong id="monitoring-threshold-count">{monitoring["threshold_trigger_count"]}</strong>
-                  <small>Tripwires currently breaching configured limits.</small>
-                </article>
-                <article class="signal-card">
-                  <span>Recent Failed Runs</span>
-                  <strong id="monitoring-failed-run-count">{monitoring["failed_run_count"]}</strong>
-                  <small>Failed runs returned in the recent monitoring window.</small>
-                </article>
-                <article class="signal-card">
-                  <span>Source Issues</span>
-                  <strong id="monitoring-source-issue-count">{monitoring["source_issue_count"]}</strong>
-                  <small id="monitoring-freshness-note">{escape(freshness_label)}</small>
-                </article>
+              <div class="table-shell">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Rank</th>
+                      <th>Site</th>
+                      <th>Metro</th>
+                      <th>University anchor</th>
+                      <th>Land scale</th>
+                      <th>Readiness</th>
+                      <th>Score</th>
+                      <th>Access</th>
+                    </tr>
+                  </thead>
+                  <tbody id="opportunity-table-body">
+                    {opportunity_rows_html}
+                  </tbody>
+                </table>
               </div>
-
-              <div class="lane-grid">
-                <article class="lane-card">
-                  <h3>Run Status</h3>
-                  <div class="lane-list" id="monitoring-run-lanes">
-                    <div class="feed-empty">Refreshing run status lanes.</div>
-                  </div>
-                </article>
-                <article class="lane-card">
-                  <h3>Batch Status</h3>
-                  <div class="lane-list" id="monitoring-batch-lanes">
-                    <div class="feed-empty">Refreshing batch status lanes.</div>
-                  </div>
-                </article>
-                <article class="lane-card">
-                  <h3>Threshold Tripwires</h3>
-                  <div class="lane-list" id="monitoring-threshold-list">
-                    <div class="feed-empty">Refreshing threshold state.</div>
-                  </div>
-                </article>
-              </div>
-            </article>
-
-            <article class="panel feed-panel">
-              <article class="latest-batch-card">
-                <span>Latest Batch</span>
-                <strong id="monitoring-latest-batch-status">{escape(latest_batch_status)}</strong>
-                <code id="monitoring-latest-batch-id">{escape(latest_batch_identifier)}</code>
-                <small id="monitoring-latest-batch-progress">{escape(latest_batch_progress)}</small>
-              </article>
-
-              <div class="feed-columns">
-                <article class="feed-column">
-                  <h3>Alert Feed</h3>
-                  <div class="feed-list" id="monitoring-alert-feed">
-                    <div class="feed-empty">Monitoring alerts will appear here.</div>
-                  </div>
-                </article>
-                <article class="feed-column">
-                  <h3>Recent Failed Runs</h3>
-                  <div class="feed-list" id="monitoring-run-feed">
-                    <div class="feed-empty">Recent failed runs will appear here.</div>
-                  </div>
-                </article>
-              </div>
-
-              <p class="panel-copy" id="monitoring-error">{escape(monitoring_note)}</p>
-            </article>
+            </div>
           </section>
 
-          <section class="lower-grid">
-            <article class="panel">
-              <h2>Eight-Phase Delivery Grid</h2>
-              <p class="panel-copy">
-                The stack is organized into eight operating phases, each with its
-                own route surface and control focus.
-              </p>
-              <div class="phase-grid">
-                {phase_cards}
-              </div>
-            </article>
+          <footer class="footer-bar">
+            <span>{escape(settings.app_name)} · version <span id="version-pill">{escape(APP_VERSION)}</span></span>
+            <div class="footer-links">
+              <a href="/dashboard/summary">Live JSON</a>
+              <a href="/health">Health</a>
+              <a href="/version">Version</a>
+            </div>
+          </footer>
+        </div>
 
-            <article class="panel">
-              <h2>Route Heat</h2>
-              <p class="panel-copy">
-                Endpoint density by domain. Heavier bands indicate broader
-                operator workflow coverage in the current API surface.
-              </p>
-              <div class="heat-stack">
-                {heat_rows}
-              </div>
-            </article>
-          </section>
-
-          <section class="secondary-grid">
-            <article class="panel">
-              <h2>Domain Inventory</h2>
-              <p class="panel-copy">
-                Each platform slice includes representative paths so the dashboard
-                stays grounded in the actual service surface.
-              </p>
-              <div class="domain-grid">
-                {domain_tiles}
-              </div>
-            </article>
-
-            <article class="panel">
-              <h2>Access + Tripwires</h2>
-              <p class="panel-copy">
-                Header conventions and monitoring thresholds that shape operator
-                access, observability, and release safety.
-              </p>
-              <div class="auth-stack">
-                {auth_rows}
-              </div>
-              <div class="tripwire-grid">
-                {tripwire_cards}
-              </div>
-            </article>
-
-            <article class="panel">
-              <h2>Managed Table Cloud</h2>
-              <p class="table-note">
-                The persistence layer currently tracks {summary["managed_table_count"]}
-                managed tables across raw source data, scoring, operations, and UAT.
-              </p>
-              <div class="table-cloud">
-                {table_chips}
-              </div>
-            </article>
-
-            <article class="panel">
-              <h2>Quick Launch</h2>
-              <p class="panel-copy">
-                Fast paths into diagnostics, docs, platform metadata, and release
-                support endpoints.
-              </p>
-              <div class="launch-grid">
-                <a class="launch-link" href="/docs">
-                  <span>Browse</span>
-                  <strong>Swagger Explorer</strong>
-                  <small>Test routes and review request or response schemas.</small>
-                </a>
-                <a class="launch-link" href="/health">
-                  <span>Probe</span>
-                  <strong>Health Endpoint</strong>
-                  <small>Simple readiness signal for local startup and uptime checks.</small>
-                </a>
-                <a class="launch-link" href="/version">
-                  <span>Inspect</span>
-                  <strong>Version Surface</strong>
-                  <small>Expose the running application version for quick validation.</small>
-                </a>
-                <a class="launch-link" href="/dashboard/summary">
-                  <span>Integrate</span>
-                  <strong>Dashboard Summary JSON</strong>
-                  <small>Public inventory feed for future frontends or status boards.</small>
-                </a>
-              </div>
-            </article>
-          </section>
-
-          <section class="footer-note">
-            <span>{app_name} is running in {environment} with {summary["protected_route_count"]} protected operator or admin routes.</span>
-            <span>UAT environment: {escape(summary["runtime"]["uat_environment"])}</span>
-          </section>
-        </main>
+        <script id="dashboard-payload" type="application/json">{payload_json}</script>
         <script>
-          const counters = document.querySelectorAll("[data-count]");
-          counters.forEach((element) => {{
-            const target = Number(element.dataset.count || "0");
-            let current = 0;
-            const step = Math.max(1, Math.ceil(target / 28));
-            const tick = () => {{
-              current = Math.min(current + step, target);
-              element.textContent = String(current);
-              if (current < target) {{
-                window.requestAnimationFrame(tick);
-              }}
-            }};
-            window.requestAnimationFrame(tick);
-          }});
+          const payloadNode = document.getElementById("dashboard-payload");
+          let dashboardPayload = payloadNode ? JSON.parse(payloadNode.textContent) : null;
 
-          const heartbeatStatus = document.getElementById("heartbeat-status");
-          const versionPill = document.getElementById("version-pill");
-          const dashboardClock = document.getElementById("dashboard-clock");
+          const searchFilter = document.getElementById("search-filter");
+          const metroFilter = document.getElementById("metro-filter");
+          const stageFilter = document.getElementById("stage-filter");
+          const universityFilter = document.getElementById("university-filter");
+          const catalogueCount = document.getElementById("catalogue-count");
+          const rows = Array.from(document.querySelectorAll(".opportunity-row"));
+
           const monitoringStatus = document.getElementById("monitoring-status");
-          const monitoringEvaluated = document.getElementById("monitoring-evaluated");
           const monitoringAlertCount = document.getElementById("monitoring-alert-count");
-          const monitoringThresholdCount = document.getElementById("monitoring-threshold-count");
-          const monitoringFailedRunCount = document.getElementById("monitoring-failed-run-count");
-          const monitoringSourceIssueCount = document.getElementById("monitoring-source-issue-count");
-          const monitoringFreshnessNote = document.getElementById("monitoring-freshness-note");
-          const monitoringRunLanes = document.getElementById("monitoring-run-lanes");
-          const monitoringBatchLanes = document.getElementById("monitoring-batch-lanes");
-          const monitoringThresholdList = document.getElementById("monitoring-threshold-list");
-          const monitoringAlertFeed = document.getElementById("monitoring-alert-feed");
-          const monitoringRunFeed = document.getElementById("monitoring-run-feed");
-          const monitoringLatestBatchStatus = document.getElementById("monitoring-latest-batch-status");
-          const monitoringLatestBatchId = document.getElementById("monitoring-latest-batch-id");
-          const monitoringLatestBatchProgress = document.getElementById("monitoring-latest-batch-progress");
-          const monitoringError = document.getElementById("monitoring-error");
-
-          function escapeHtml(value) {{
-            return String(value ?? "")
-              .replace(/&/g, "&amp;")
-              .replace(/</g, "&lt;")
-              .replace(/>/g, "&gt;")
-              .replace(/"/g, "&quot;")
-              .replace(/'/g, "&#39;");
-          }}
+          const monitoringSourceIssues = document.getElementById("monitoring-source-issues");
+          const monitoringFailedRuns = document.getElementById("monitoring-failed-runs");
+          const monitoringFreshness = document.getElementById("monitoring-freshness");
+          const monitoringLatestBatch = document.getElementById("monitoring-latest-batch");
+          const monitoringLatestBatchDetail = document.getElementById("monitoring-latest-batch-detail");
+          const monitoringNote = document.getElementById("monitoring-note");
+          const coverageStatus = document.getElementById("coverage-status");
+          const coverageTotalSources = document.getElementById("coverage-total-sources");
+          const coverageFreeSources = document.getElementById("coverage-free-sources");
+          const coverageConfigFlags = document.getElementById("coverage-config-flags");
+          const coverageVersion = document.getElementById("coverage-version");
+          const coverageNote = document.getElementById("coverage-note");
+          const dashboardGenerated = document.getElementById("dashboard-generated");
+          const versionPill = document.getElementById("version-pill");
 
           function humanizeStatus(value) {{
-            return String(value ?? "unknown")
+            return String(value || "")
               .replace(/_/g, " ")
               .replace(/\\b\\w/g, (character) => character.toUpperCase());
           }}
 
-          function formatTimestamp(value) {{
-            if (!value) {{
-              return "No timestamp";
-            }}
+          function applyFilters() {{
+            const searchValue = String(searchFilter.value || "").trim().toLowerCase();
+            const metroValue = metroFilter.value;
+            const stageValue = stageFilter.value;
+            const universityValue = universityFilter.value;
 
-            const date = new Date(value);
-            if (Number.isNaN(date.getTime())) {{
-              return String(value);
-            }}
-
-            return date.toLocaleString([], {{
-              year: "numeric",
-              month: "short",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            }});
-          }}
-
-          function renderLaneRows(counts) {{
-            const entries = Object.entries(counts || {{}});
-            if (!entries.length) {{
-              return '<div class="feed-empty">No status counts are available yet.</div>';
-            }}
-
-            const max = Math.max(...entries.map(([, count]) => Number(count) || 0), 1);
-            return entries
-              .map(([status, count]) => {{
-                const width = Math.max(14, Math.round(((Number(count) || 0) / max) * 100));
-                const tone = String(status || "").toLowerCase();
-                return `
-                  <div class="lane-row">
-                    <header>
-                      <strong>${{escapeHtml(humanizeStatus(status))}}</strong>
-                      <small>${{escapeHtml(count)}}</small>
-                    </header>
-                    <div class="lane-track">
-                      <span class="lane-fill ${{escapeHtml(tone)}}" style="width: ${{width}}%"></span>
-                    </div>
-                  </div>
-                `;
-              }})
-              .join("");
-          }}
-
-          function renderThresholds(thresholds) {{
-            if (!thresholds || !thresholds.length) {{
-              return '<div class="feed-empty">No monitoring thresholds are configured yet.</div>';
-            }}
-
-            return thresholds
-              .map((threshold) => `
-                <div class="threshold-chip ${{threshold.triggered ? "is-triggered" : ""}}">
-                  <strong>${{escapeHtml(humanizeStatus(threshold.code))}}</strong>
-                  <small>${{escapeHtml(threshold.summary)}}</small>
-                </div>
-              `)
-              .join("");
-          }}
-
-          function renderAlertFeed(alerts) {{
-            if (!alerts || !alerts.length) {{
-              return '<div class="feed-empty">No active alerts in the current monitoring window.</div>';
-            }}
-
-            return alerts
-              .map((alert) => `
-                <article class="feed-item">
-                  <header>
-                    <strong>${{escapeHtml(alert.summary)}}</strong>
-                    <code>${{escapeHtml(alert.severity)}}</code>
-                  </header>
-                  <small>${{escapeHtml(alert.code)}}${{alert.metro_id ? ` · Metro ${{escapeHtml(alert.metro_id)}}` : ""}}</small>
-                </article>
-              `)
-              .join("");
-          }}
-
-          function renderRunFeed(runs) {{
-            if (!runs || !runs.length) {{
-              return '<div class="feed-empty">No recent failed runs are present right now.</div>';
-            }}
-
-            return runs
-              .map((run) => `
-                <article class="feed-item">
-                  <header>
-                    <strong>${{escapeHtml(run.metro_id)}} · ${{escapeHtml(humanizeStatus(run.status))}}</strong>
-                    <code>${{escapeHtml(run.run_id)}}</code>
-                  </header>
-                  <small>${{escapeHtml(run.failure_reason || "No failure reason recorded")}}</small>
-                  <small>${{escapeHtml(formatTimestamp(run.completed_at || run.started_at))}}</small>
-                </article>
-              `)
-              .join("");
-          }}
-
-          function applyMonitoring(monitoring) {{
-            const isAvailable = Boolean(monitoring && monitoring.available);
-            monitoringStatus.textContent = isAvailable ? "Live feed active" : "Monitoring unavailable";
-            monitoringStatus.classList.toggle("is-live", isAvailable);
-            monitoringStatus.classList.toggle("is-down", !isAvailable);
-            monitoringEvaluated.textContent = formatTimestamp(monitoring.evaluated_at);
-            monitoringAlertCount.textContent = String(monitoring.alert_count || 0);
-            monitoringThresholdCount.textContent = String(monitoring.threshold_trigger_count || 0);
-            monitoringFailedRunCount.textContent = String(monitoring.failed_run_count || 0);
-            monitoringSourceIssueCount.textContent = String(monitoring.source_issue_count || 0);
-            monitoringFreshnessNote.textContent = monitoring.freshness
-              ? (monitoring.freshness.passed
-                  ? "Freshness passed"
-                  : `Freshness failures: ${{monitoring.freshness.failed_count}}`)
-              : "Not scoped";
-
-            const latestBatch = monitoring.latest_batch;
-            if (latestBatch) {{
-              monitoringLatestBatchStatus.textContent = humanizeStatus(latestBatch.status);
-              monitoringLatestBatchId.textContent = latestBatch.batch_id;
-              monitoringLatestBatchProgress.textContent =
-                `${{latestBatch.completed_metros}}/${{latestBatch.expected_metros}} metros complete`;
-            }} else {{
-              monitoringLatestBatchStatus.textContent = "No batch activity";
-              monitoringLatestBatchId.textContent = "Awaiting first batch";
-              monitoringLatestBatchProgress.textContent = "No orchestration runs have completed yet.";
-            }}
-
-            monitoringRunLanes.innerHTML = renderLaneRows(monitoring.run_counts);
-            monitoringBatchLanes.innerHTML = renderLaneRows(monitoring.batch_counts);
-            monitoringThresholdList.innerHTML = renderThresholds(monitoring.thresholds);
-            monitoringAlertFeed.innerHTML = renderAlertFeed(monitoring.alerts);
-            monitoringRunFeed.innerHTML = renderRunFeed(monitoring.recent_failed_runs);
-            monitoringError.textContent =
-              monitoring.error || "Polling the live monitoring summary every 15 seconds.";
-          }}
-
-          async function refreshHeartbeat() {{
-            try {{
-              const response = await fetch("/health", {{ headers: {{ "Accept": "application/json" }} }});
-              const payload = await response.json();
-              heartbeatStatus.textContent = payload.status === "ok" ? "Healthy and reachable" : "Health check returned warnings";
-            }} catch (_error) {{
-              heartbeatStatus.textContent = "Unable to reach /health";
-            }}
-          }}
-
-          async function refreshVersion() {{
-            try {{
-              const response = await fetch("/version", {{ headers: {{ "Accept": "application/json" }} }});
-              const payload = await response.json();
-              versionPill.textContent = payload.version || "{version}";
-            }} catch (_error) {{
-              versionPill.textContent = "{version}";
-            }}
-          }}
-
-          async function refreshDashboardSummary() {{
-            try {{
-              const response = await fetch("/dashboard/summary", {{
-                headers: {{ "Accept": "application/json" }},
-              }});
-              const payload = await response.json();
-              if (payload.generated_at) {{
-                dashboardClock.dataset.generatedAt = payload.generated_at;
+            let visibleCount = 0;
+            for (const row of rows) {{
+              const matchesSearch = !searchValue || row.dataset.search.includes(searchValue);
+              const matchesMetro = !metroValue || row.dataset.metro === metroValue;
+              const matchesStage = !stageValue || row.dataset.stage === stageValue;
+              const matchesUniversity = !universityValue || row.dataset.university === universityValue;
+              const isVisible = matchesSearch && matchesMetro && matchesStage && matchesUniversity;
+              row.classList.toggle("is-hidden", !isVisible);
+              if (isVisible) {{
+                visibleCount += 1;
               }}
-              applyMonitoring(payload.monitoring || {{}});
-            }} catch (_error) {{
-              applyMonitoring({{
-                available: false,
-                evaluated_at: null,
-                alert_count: 0,
-                threshold_trigger_count: 0,
-                failed_run_count: 0,
-                source_issue_count: 0,
-                run_counts: {{}},
-                batch_counts: {{}},
-                thresholds: [],
-                alerts: [],
-                recent_failed_runs: [],
-                latest_batch: null,
-                freshness: null,
-                error: "Dashboard summary refresh failed. Verify the monitoring backend.",
-              }});
             }}
+
+            catalogueCount.textContent = `Showing ${{visibleCount}} of ${{rows.length}} sites.`;
           }}
 
-          function refreshClock() {{
-            const generatedAt = dashboardClock.dataset.generatedAt;
-            if (!generatedAt) {{
+          function updateMonitoring(monitoring) {{
+            if (!monitoringStatus || !monitoring) {{
               return;
             }}
 
-            const date = new Date(generatedAt);
-            dashboardClock.textContent = date.toLocaleString([], {{
-              year: "numeric",
-              month: "short",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            }});
+            const isAvailable = Boolean(monitoring.available);
+            monitoringStatus.textContent = isAvailable ? "Live pipeline feed active" : "Monitoring unavailable";
+            monitoringStatus.classList.toggle("live", isAvailable);
+            monitoringStatus.classList.toggle("down", !isAvailable);
+            monitoringAlertCount.textContent = String(monitoring.alert_count || 0);
+            monitoringSourceIssues.textContent = String(monitoring.source_issue_count || 0);
+            monitoringFailedRuns.textContent = String(monitoring.failed_run_count || 0);
+            monitoringFreshness.textContent = monitoring.freshness
+              ? (monitoring.freshness.passed
+                  ? "Freshness passed"
+                  : `Freshness failures: ${{monitoring.freshness.failed_count}}`)
+              : "Freshness not scoped";
+
+            if (monitoring.latest_batch) {{
+              monitoringLatestBatch.textContent = humanizeStatus(monitoring.latest_batch.status);
+              monitoringLatestBatchDetail.textContent =
+                `${{monitoring.latest_batch.completed_metros}}/${{monitoring.latest_batch.expected_metros}} metros complete`;
+            }} else {{
+              monitoringLatestBatch.textContent = "No live batch";
+              monitoringLatestBatchDetail.textContent = "Parcel scoring has not activated a batch yet.";
+            }}
+
+            monitoringNote.textContent =
+              monitoring.error || "Polling live monitoring detail for customer confidence and operator visibility.";
           }}
 
-          refreshClock();
-          refreshHeartbeat();
-          refreshVersion();
-          refreshDashboardSummary();
-          window.setInterval(refreshClock, 1000);
-          window.setInterval(refreshDashboardSummary, 15000);
+          function updateCoverage(coverage) {{
+            if (!coverageStatus || !coverage) {{
+              return;
+            }}
+
+            const isAvailable = Boolean(coverage.available);
+            coverageStatus.textContent = isAvailable
+              ? "Authoritative source inventory loaded"
+              : "Source inventory unavailable";
+            coverageStatus.classList.toggle("live", isAvailable);
+            coverageStatus.classList.toggle("down", !isAvailable);
+            coverageTotalSources.textContent = String(coverage.total_sources || 0);
+            coverageFreeSources.textContent = String(coverage.free_sources || 0);
+            coverageConfigFlags.textContent = String(coverage.config_flag_count || 0);
+            coverageVersion.textContent = coverage.version || "unavailable";
+            coverageNote.textContent = coverage.error || `${{coverage.free_sources || 0}} free sources across 3 build phases.`;
+          }}
+
+          async function refreshSummary() {{
+            try {{
+              const response = await fetch("/dashboard/summary", {{
+                headers: {{ Accept: "application/json" }},
+              }});
+              if (!response.ok) {{
+                return;
+              }}
+              dashboardPayload = await response.json();
+              if (dashboardPayload.generated_at && dashboardGenerated) {{
+                dashboardGenerated.textContent = dashboardPayload.generated_at;
+              }}
+              if (dashboardPayload.version && versionPill) {{
+                versionPill.textContent = dashboardPayload.version;
+              }}
+              updateMonitoring(dashboardPayload.monitoring);
+              updateCoverage(dashboardPayload.data_coverage);
+            }} catch (_error) {{
+            }}
+          }}
+
+          if (searchFilter) {{
+            searchFilter.addEventListener("input", applyFilters);
+          }}
+          if (metroFilter) {{
+            metroFilter.addEventListener("change", applyFilters);
+          }}
+          if (stageFilter) {{
+            stageFilter.addEventListener("change", applyFilters);
+          }}
+          if (universityFilter) {{
+            universityFilter.addEventListener("change", applyFilters);
+          }}
+
+          applyFilters();
+          if (dashboardPayload) {{
+            updateMonitoring(dashboardPayload.monitoring);
+            updateCoverage(dashboardPayload.data_coverage);
+          }}
+          window.setInterval(refreshSummary, 60000);
         </script>
       </body>
     </html>

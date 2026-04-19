@@ -1,41 +1,44 @@
 from fastapi.testclient import TestClient
 
 from app.api.routes import system as system_routes
-from app.db.models import MANAGED_TABLES
 from app.main import app
 
 
-def test_dashboard_landing_page_returns_visual_shell() -> None:
+def test_dashboard_landing_page_returns_customer_facing_shell() -> None:
     client = TestClient(app)
     response = client.get("/")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
-    assert "Operations Command Center" in response.text
-    assert "Live Monitoring Pulse" in response.text
-    assert "Eight-Phase Delivery Grid" in response.text
-    assert "Managed Table Cloud" in response.text
-    assert 'href="/docs"' in response.text
-    assert 'href="/health"' in response.text
+    assert "Texas Data Center Siting Dashboard" in response.text
+    assert "Texas Opportunity Catalogue" in response.text
+    assert "Plano North Utility Belt" in response.text
+    assert "Katy West Power Exchange" in response.text
     assert 'href="/dashboard/summary"' in response.text
+    assert 'href="/health"' in response.text
 
 
-def test_dashboard_summary_returns_platform_inventory() -> None:
+def test_dashboard_summary_returns_texas_opportunity_catalog() -> None:
     client = TestClient(app)
     response = client.get("/dashboard/summary")
     assert response.status_code == 200
     payload = response.json()
     assert payload["app_name"] == "dense-data-center-locator"
-    assert payload["managed_table_count"] == len(MANAGED_TABLES)
-    assert payload["phase_count"] == 8
-    assert payload["public_route_count"] == 4
-    assert "monitoring" in payload
-    assert any(domain["slug"] == "orchestration" for domain in payload["domains"])
-    assert any(tripwire["label"] == "Failed runs" for tripwire in payload["tripwires"])
+    assert payload["market"] == "Texas"
+    assert payload["data_mode"] == "seeded_catalog"
+    assert payload["opportunity_count"] == 50
+    assert payload["corridor_count"] == 12
+    assert len(payload["featured_opportunities"]) == 6
+    assert len(payload["opportunities"]) == 50
+    assert any(item["metro"] == "Dallas-Fort Worth" for item in payload["opportunities"])
+    assert any(
+        item["university_anchor"] == "University of Texas at Austin"
+        for item in payload["opportunities"]
+    )
+    assert payload["data_coverage"]["available"] is True
+    assert payload["data_coverage"]["total_sources"] == 51
 
 
-def test_dashboard_summary_includes_live_monitoring_snapshot(
-    monkeypatch,
-) -> None:
+def test_dashboard_summary_includes_live_monitoring_snapshot(monkeypatch) -> None:
     fake_monitoring = {
         "available": True,
         "error": None,
@@ -80,6 +83,31 @@ def test_dashboard_summary_includes_live_monitoring_snapshot(
     assert payload["monitoring"]["alert_count"] == 3
     assert payload["monitoring"]["latest_batch"]["batch_id"] == "batch-live-001"
     assert payload["monitoring"]["run_counts"]["running"] == 2
+
+
+def test_dashboard_summary_falls_back_when_inventory_is_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(
+        system_routes,
+        "_read_source_inventory_snapshot",
+        lambda settings: {
+            "available": False,
+            "error": "inventory unavailable for test",
+            "version": None,
+            "captured_at": None,
+            "total_sources": 0,
+            "free_sources": 0,
+            "config_flag_count": 0,
+            "phase_totals": [],
+        },
+    )
+
+    client = TestClient(app)
+    response = client.get("/dashboard/summary")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_coverage"]["available"] is False
+    assert payload["data_coverage"]["error"] == "inventory unavailable for test"
+    assert payload["data_coverage"]["phase_totals"] == []
 
 
 def test_health_endpoint_returns_ok() -> None:
