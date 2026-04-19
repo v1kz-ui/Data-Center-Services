@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.security import require_admin_access
+from app.core.security import AppRole, require_admin_access, require_roles
 from app.core.settings import Settings, get_settings
 from app.db.models import MANAGED_TABLES
 from app.db.session import SessionLocal
@@ -25,6 +25,10 @@ from app.services.source_inventory import (
 
 router = APIRouter()
 AdminAccess = Annotated[object, Depends(require_admin_access)]
+DashboardAccess = Annotated[
+    object,
+    Depends(require_roles(AppRole.ADMIN, AppRole.OPERATOR, AppRole.READER)),
+]
 APP_VERSION = "0.1.0"
 
 
@@ -453,14 +457,14 @@ def _render_phase_totals(phase_totals: Iterable[dict[str, Any]]) -> str:
 
 
 @router.get("/dashboard/summary", response_model=TexasDashboardSummaryResponse)
-def dashboard_summary() -> TexasDashboardSummaryResponse:
+def dashboard_summary(_: DashboardAccess) -> TexasDashboardSummaryResponse:
     settings = get_settings()
     summary = _build_dashboard_summary(settings)
     return TexasDashboardSummaryResponse.model_validate(summary)
 
 
 @router.get("/", response_class=HTMLResponse)
-def landing_page() -> str:
+def landing_page(_: DashboardAccess) -> str:
     settings = get_settings()
     summary = _build_dashboard_summary(settings)
     monitoring = summary["monitoring"]
@@ -1266,7 +1270,7 @@ def landing_page() -> str:
         <div class="page-shell">
           <section class="hero">
             <div class="hero-copy">
-              <span class="eyebrow">Texas Data Center Siting Dashboard</span>
+              <span class="eyebrow">Private Texas Client Intelligence Portal</span>
               <h1>{escape(summary["hero_title"])}</h1>
               <p>{escape(summary["hero_subtitle"])}</p>
               <div class="hero-actions">
@@ -1302,7 +1306,7 @@ def landing_page() -> str:
               <header>
                 <div>
                   <h2>Texas Opportunity Field</h2>
-                  <span>Geographic spread of the current customer watchlist.</span>
+                  <span>Geographic spread of the current private client watchlist.</span>
                 </div>
                 <strong>{summary["opportunity_count"]} sites</strong>
               </header>
@@ -1372,7 +1376,7 @@ def landing_page() -> str:
                     <strong id="monitoring-latest-batch">{escape(latest_batch_label)}</strong><br />
                     <span id="monitoring-latest-batch-detail">{escape(latest_batch_detail)}</span>
                   </div>
-                  <div class="note" id="monitoring-note">{escape(monitoring["error"] or "Polling live monitoring detail for customer confidence and operator visibility.")}</div>
+                  <div class="note" id="monitoring-note">{escape(monitoring["error"] or "Polling live monitoring detail for private client briefings and operator visibility.")}</div>
                 </article>
 
                 <article class="telemetry-card">
@@ -1563,7 +1567,7 @@ def landing_page() -> str:
             }}
 
             monitoringNote.textContent =
-              monitoring.error || "Polling live monitoring detail for customer confidence and operator visibility.";
+              monitoring.error || "Polling live monitoring detail for private client briefings and operator visibility.";
           }}
 
           function updateCoverage(coverage) {{

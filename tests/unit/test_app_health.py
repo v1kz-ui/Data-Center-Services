@@ -1,15 +1,28 @@
+from fastapi import status
 from fastapi.testclient import TestClient
 
 from app.api.routes import system as system_routes
 from app.main import app
 
 
-def test_dashboard_landing_page_returns_customer_facing_shell() -> None:
+def test_dashboard_requires_authenticated_viewer_headers() -> None:
     client = TestClient(app)
     response = client.get("/")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    response = client.get("/dashboard/summary")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_dashboard_landing_page_returns_private_client_shell(
+    reader_headers: dict[str, str],
+) -> None:
+    client = TestClient(app)
+    response = client.get("/", headers=reader_headers)
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
-    assert "Texas Data Center Siting Dashboard" in response.text
+    assert "Texas Private Client Siting Portal" in response.text
+    assert "Private Texas Client Intelligence Portal" in response.text
     assert "Texas Opportunity Catalogue" in response.text
     assert "Plano North Utility Belt" in response.text
     assert "Katy West Power Exchange" in response.text
@@ -17,12 +30,15 @@ def test_dashboard_landing_page_returns_customer_facing_shell() -> None:
     assert 'href="/health"' in response.text
 
 
-def test_dashboard_summary_returns_texas_opportunity_catalog() -> None:
+def test_dashboard_summary_returns_texas_opportunity_catalog(
+    reader_headers: dict[str, str],
+) -> None:
     client = TestClient(app)
-    response = client.get("/dashboard/summary")
+    response = client.get("/dashboard/summary", headers=reader_headers)
     assert response.status_code == 200
     payload = response.json()
     assert payload["app_name"] == "dense-data-center-locator"
+    assert payload["display_name"] == "Texas Private Client Siting Portal"
     assert payload["market"] == "Texas"
     assert payload["data_mode"] == "seeded_catalog"
     assert payload["opportunity_count"] == 50
@@ -76,7 +92,14 @@ def test_dashboard_summary_includes_live_monitoring_snapshot(monkeypatch) -> Non
     )
 
     client = TestClient(app)
-    response = client.get("/dashboard/summary")
+    response = client.get(
+        "/dashboard/summary",
+        headers={
+            "X-DDCL-Subject": "test-reader",
+            "X-DDCL-Name": "Test Reader",
+            "X-DDCL-Roles": "reader",
+        },
+    )
     assert response.status_code == 200
     payload = response.json()
     assert payload["monitoring"]["available"] is True
@@ -85,7 +108,10 @@ def test_dashboard_summary_includes_live_monitoring_snapshot(monkeypatch) -> Non
     assert payload["monitoring"]["run_counts"]["running"] == 2
 
 
-def test_dashboard_summary_falls_back_when_inventory_is_unavailable(monkeypatch) -> None:
+def test_dashboard_summary_falls_back_when_inventory_is_unavailable(
+    monkeypatch,
+    reader_headers: dict[str, str],
+) -> None:
     monkeypatch.setattr(
         system_routes,
         "_read_source_inventory_snapshot",
@@ -102,7 +128,7 @@ def test_dashboard_summary_falls_back_when_inventory_is_unavailable(monkeypatch)
     )
 
     client = TestClient(app)
-    response = client.get("/dashboard/summary")
+    response = client.get("/dashboard/summary", headers=reader_headers)
     assert response.status_code == 200
     payload = response.json()
     assert payload["data_coverage"]["available"] is False

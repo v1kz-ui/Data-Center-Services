@@ -1207,7 +1207,7 @@ def build_customer_dashboard_summary(
 
     return {
         "app_name": settings.app_name,
-        "display_name": "Texas Data Center Siting Dashboard",
+        "display_name": "Texas Private Client Siting Portal",
         "environment": settings.app_env,
         "version": "0.1.0",
         "generated_at": generated_at,
@@ -1215,7 +1215,7 @@ def build_customer_dashboard_summary(
         "data_mode": "seeded_catalog",
         "hero_title": "50 ranked Texas opportunities near cities, utilities, and university talent.",
         "hero_subtitle": (
-            "Customer-facing shortlist designed to help site selectors focus on metros "
+            "Private shortlist designed to help client principals and site selectors focus on metros "
             "and corridors where power, fiber, land scale, and workforce depth align."
         ),
         "opportunity_count": len(opportunities),
@@ -1331,7 +1331,7 @@ def _build_metrics(
         {
             "label": "Texas opportunities",
             "value": len(opportunities),
-            "detail": "Ranked candidate sites seeded for customer review across the state.",
+            "detail": "Ranked candidate sites seeded for private client review across the state.",
             "tone": "teal",
         },
         {
