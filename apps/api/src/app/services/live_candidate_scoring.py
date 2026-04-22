@@ -23,6 +23,8 @@ _MAX_HIGHWAY_DISTANCE_MILES = 25.0
 _MAX_WATER_DISTANCE_MILES = 40.0
 _DEFAULT_SHORTLIST_LIMIT = 136
 _MAX_OPPORTUNITIES_PER_METRO = 30
+_SWEET_SPOT_ACREAGE_MIN = 1.0
+_SWEET_SPOT_ACREAGE_MAX = 2.0
 _SHORTLIST_METRO_ALLOWLIST = frozenset(
     {
         "Dallas-Fort Worth",
@@ -1046,12 +1048,16 @@ def _load_listing_candidates(session: Session) -> list[ListingCandidate]:
             MarketListing.is_active.is_(True),
             MarketListing.latitude.is_not(None),
             MarketListing.longitude.is_not(None),
+            MarketListing.acreage.is_not(None),
+            MarketListing.acreage >= _SWEET_SPOT_ACREAGE_MIN,
+            MarketListing.acreage <= _SWEET_SPOT_ACREAGE_MAX,
         )
     ).all()
     candidates: list[ListingCandidate] = []
     for row in rows:
         if (row.state_code or "TX").upper() != "TX":
             continue
+        acreage = float(row.acreage)
         candidates.append(
             ListingCandidate(
                 market_listing_id=str(UUID(str(row.market_listing_id))),
@@ -1061,7 +1067,7 @@ def _load_listing_candidates(session: Session) -> list[ListingCandidate]:
                 listing_status=row.listing_status,
                 asset_type=row.asset_type,
                 asking_price=float(row.asking_price) if row.asking_price is not None else None,
-                acreage=float(row.acreage) if row.acreage is not None else None,
+                acreage=acreage,
                 building_sqft=float(row.building_sqft) if row.building_sqft is not None else None,
                 city=row.city,
                 state_code=row.state_code,
@@ -1275,7 +1281,10 @@ def _score_bonuses(
     acreage = candidate.acreage or 0.0
     building_sqft = candidate.building_sqft or 0.0
     points += 1.0
-    if 1.0 <= acreage <= 3.0 or 15_000 <= building_sqft <= 75_000:
+    if (
+        _SWEET_SPOT_ACREAGE_MIN <= acreage <= _SWEET_SPOT_ACREAGE_MAX
+        or 15_000 <= building_sqft <= 75_000
+    ):
         points += 1.0
     if (substation_distance or 999.0) <= 10.0 and (peering_distance or 999.0) <= 20.0:
         points += 1.0
@@ -1417,6 +1426,7 @@ def _build_opportunity_record(
         "county": f"{city_anchor.county} County",
         "region": city_anchor.region,
         "university_anchor": university_anchor.name,
+        "acreage": round(candidate.acreage, 4) if candidate.acreage is not None else None,
         "acreage_band": _acreage_band(candidate),
         "distance_to_city_miles": round(city_distance),
         "distance_to_university_miles": round(
@@ -1460,9 +1470,9 @@ def _asset_suitability(candidate: ListingCandidate) -> float:
     for token, penalty in _KEYWORD_PENALTIES.items():
         if token in title:
             score -= penalty
-    if 1.0 <= acreage <= 3.0:
+    if _SWEET_SPOT_ACREAGE_MIN <= acreage <= _SWEET_SPOT_ACREAGE_MAX:
         score += 0.05
-    elif acreage > 10.0:
+    elif acreage > _SWEET_SPOT_ACREAGE_MAX:
         score -= 0.05
     if 15_000 <= building_sqft <= 75_000:
         score += 0.04
@@ -1666,12 +1676,15 @@ def _scale_approval_adjustment(
     political_delta = 0.0
 
     if acreage is not None and acreage > 0:
-        if 1.0 <= acreage <= 3.0:
+        if _SWEET_SPOT_ACREAGE_MIN <= acreage <= _SWEET_SPOT_ACREAGE_MAX:
             social_delta += 6.0
             political_delta += 4.0
+        elif acreage <= 3.0:
+            social_delta -= 1.0 * scale_sensitivity
+            political_delta -= 1.0 * scale_sensitivity
         elif acreage <= 10.0:
-            social_delta += 2.0
-            political_delta += 1.0
+            social_delta -= 2.0 * scale_sensitivity
+            political_delta -= 2.0 * scale_sensitivity
         elif acreage <= 25.0:
             social_delta -= 4.0 * scale_sensitivity
             political_delta -= 3.0 * scale_sensitivity
@@ -1794,13 +1807,17 @@ def _strengths(
 def _acreage_band(candidate: ListingCandidate) -> str:
     if candidate.acreage is not None and candidate.acreage > 0:
         acreage = round(candidate.acreage, 1)
+        if _SWEET_SPOT_ACREAGE_MIN <= acreage <= _SWEET_SPOT_ACREAGE_MAX:
+            return f"{acreage:.1f} acres (1-2 acre sweet spot)"
+        if acreage < _SWEET_SPOT_ACREAGE_MIN:
+            return f"{acreage:.1f} acres (below target footprint)"
+        if acreage <= 3:
+            return f"{acreage:.1f} acres (above target footprint)"
         if acreage > 25:
             return f"{acreage:.1f} acres (large tract)"
         if acreage > 10:
             return f"{acreage:.1f} acres (expansion tract)"
-        if acreage >= 1:
-            return f"{acreage:.1f} acres (sweet-spot footprint)"
-        return f"{acreage:.1f} acres (compact infill)"
+        return f"{acreage:.1f} acres (oversized tract)"
     if candidate.building_sqft is not None and candidate.building_sqft > 0:
         return f"{int(candidate.building_sqft):,} sqft building"
     return "Acreage not disclosed"
@@ -1856,16 +1873,32 @@ def _acreage_fit_score(acreage: float | None) -> float:
     if acreage is None or acreage <= 0:
         return 0.0
     if acreage < 0.5:
-        return 0.18
+        return 0.12
     if acreage < 1.0:
-        return _interpolate(acreage, start=0.5, end=1.0, low=0.35, high=0.72)
+        return _interpolate(acreage, start=0.5, end=1.0, low=0.25, high=0.78)
+    if acreage <= 1.5:
+        return _interpolate(acreage, start=1.0, end=1.5, low=0.95, high=1.0)
+    if acreage <= _SWEET_SPOT_ACREAGE_MAX:
+        return _interpolate(
+            acreage,
+            start=1.5,
+            end=_SWEET_SPOT_ACREAGE_MAX,
+            low=1.0,
+            high=0.96,
+        )
     if acreage <= 3.0:
-        return _interpolate(acreage, start=1.0, end=3.0, low=0.88, high=1.0)
+        return _interpolate(
+            acreage,
+            start=_SWEET_SPOT_ACREAGE_MAX,
+            end=3.0,
+            low=0.65,
+            high=0.35,
+        )
     if acreage <= 10.0:
-        return _interpolate(acreage, start=3.0, end=10.0, low=0.95, high=0.45)
+        return _interpolate(acreage, start=3.0, end=10.0, low=0.30, high=0.12)
     if acreage <= 25.0:
-        return _interpolate(acreage, start=10.0, end=25.0, low=0.45, high=0.18)
-    return 0.12
+        return _interpolate(acreage, start=10.0, end=25.0, low=0.12, high=0.06)
+    return 0.03
 
 
 def _building_fit_score(building_sqft: float | None) -> float:

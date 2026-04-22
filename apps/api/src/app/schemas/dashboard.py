@@ -26,6 +26,7 @@ class TexasOpportunityResponse(BaseModel):
     county: str
     region: str
     university_anchor: str
+    acreage: float | None = None
     acreage_band: str
     distance_to_city_miles: int
     distance_to_university_miles: int

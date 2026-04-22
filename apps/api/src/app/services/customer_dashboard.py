@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from statistics import mean
 from typing import Any
 
@@ -1208,8 +1210,17 @@ def build_customer_dashboard_summary(
         except Exception:
             live_opportunities = []
 
-    data_mode = "live_candidate_scoring" if live_opportunities else "seeded_catalog"
-    opportunities = live_opportunities or _build_opportunities()
+    snapshot_opportunities = [] if live_opportunities else _load_client_contender_snapshot(settings)
+    if live_opportunities:
+        data_mode = "live_candidate_scoring"
+        opportunities = live_opportunities
+    elif snapshot_opportunities:
+        data_mode = "client_snapshot"
+        opportunities = snapshot_opportunities
+    else:
+        data_mode = "seeded_catalog"
+        opportunities = _build_opportunities()
+    market_backed_mode = data_mode in {"live_candidate_scoring", "client_snapshot"}
     featured_opportunities = opportunities[:6]
     corridors = _build_corridors(opportunities)
     unique_universities = sorted(
@@ -1232,7 +1243,7 @@ def build_customer_dashboard_summary(
         "data_mode": data_mode,
         "hero_title": (
             f"{opportunity_count} live-ranked Texas opportunities balanced across major metros."
-            if data_mode == "live_candidate_scoring"
+            if market_backed_mode
             else (
                 f"{opportunity_count} ranked Texas opportunities near cities, utilities, "
                 "and university talent."
@@ -1242,7 +1253,7 @@ def build_customer_dashboard_summary(
             "Candidate-first grading is using live marketed sites plus public infrastructure "
             "signals, with a social-political approval overlay and minimum major-metro coverage "
             "for client review."
-            if data_mode == "live_candidate_scoring"
+            if market_backed_mode
             else (
                 "Private shortlist designed to help client principals and site selectors focus on "
                 "metros and corridors where power, fiber, land scale, workforce depth, and "
@@ -1271,6 +1282,23 @@ def build_customer_dashboard_summary(
     }
 
 
+def _load_client_contender_snapshot(settings: Settings) -> list[dict[str, Any]]:
+    path = Path(settings.client_contender_snapshot_path)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    opportunities = payload.get("opportunities")
+    if not isinstance(opportunities, list):
+        return []
+
+    return [dict(item) for item in opportunities if isinstance(item, dict)]
+
+
 def _build_opportunities() -> list[dict[str, Any]]:
     ranked = sorted(
         _OPPORTUNITY_SEEDS,
@@ -1295,6 +1323,7 @@ def _build_opportunities() -> list[dict[str, Any]]:
             environment_score=max(seed.water_score - 4, 52),
             hazard_score=max(seed.water_score - 6, 50),
         )
+        acreage_estimate = _seed_acreage_estimate(seed.acreage_band)
         opportunities.append(
             {
                 "rank": rank,
@@ -1306,6 +1335,7 @@ def _build_opportunities() -> list[dict[str, Any]]:
                 "county": seed.county,
                 "region": seed.region,
                 "university_anchor": seed.university_anchor,
+                "acreage": acreage_estimate,
                 "acreage_band": seed.acreage_band,
                 "distance_to_city_miles": seed.distance_to_city_miles,
                 "distance_to_university_miles": seed.distance_to_university_miles,
@@ -1372,13 +1402,14 @@ def _build_metrics(
     data_mode: str,
 ) -> list[dict[str, Any]]:
     planned_sources = int(source_inventory_snapshot.get("total_sources") or 0)
+    market_backed_mode = data_mode in {"live_candidate_scoring", "client_snapshot"}
     return [
         {
             "label": "Texas opportunities",
             "value": len(opportunities),
             "detail": (
                 "Live-scored marketed candidates ranked for private client review across Texas."
-                if data_mode == "live_candidate_scoring"
+                if market_backed_mode
                 else "Ranked candidate sites seeded for private client review across the state."
             ),
             "tone": "teal",
@@ -1388,7 +1419,7 @@ def _build_metrics(
             "value": priority_now_count,
             "detail": (
                 "Highest-confidence live candidates ready for immediate parcel validation."
-                if data_mode == "live_candidate_scoring"
+                if market_backed_mode
                 else "Highest-confidence corridors ready for immediate parcel sourcing."
             ),
             "tone": "gold",

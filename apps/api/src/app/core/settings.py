@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     reference_seed_dir: str = "db/seeds"
     source_connector_config_path: str = "configs/source_connectors.json"
     authoritative_source_inventory_path: str = "configs/authoritative_source_inventory.json"
+    client_contender_snapshot_path: str = "configs/client_top_136_contenders.json"
     uat_environment_name: str = "uat"
     uat_scenario_pack_path: str = "infra/uat/phase7_uat_scenarios.json"
     request_id_header: str = "X-Request-ID"

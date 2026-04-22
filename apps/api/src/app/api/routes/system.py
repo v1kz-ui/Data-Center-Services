@@ -895,8 +895,8 @@ def _build_top_ten_thesis_cards(item: dict[str, Any]) -> list[dict[str, str]]:
             "label": "Decision use",
             "title": "Good enough for a principal-level first pass",
             "body": (
-                f"The page supports a first client conversation because it states the upside, the "
-                f"approval posture, the market-listing evidence, and the next diligence gates in one place."
+                "The page supports a first client conversation because it states the upside, the "
+                "approval posture, the market-listing evidence, and the next diligence gates in one place."
             ),
         },
         {
@@ -1051,8 +1051,8 @@ def _build_decision_lens(item: dict[str, Any]) -> list[dict[str, str]]:
             "label": "Recommendation",
             "title": recommendation,
             "body": (
-                f"Use this as a client-ready shortlist item, but keep the ask disciplined: "
-                f"confirm site control, utility facts, and entitlement exposure before any pursuit spend scales."
+                "Use this as a client-ready shortlist item, but keep the ask disciplined: "
+                "confirm site control, utility facts, and entitlement exposure before any pursuit spend scales."
             ),
         },
         {
@@ -1327,11 +1327,12 @@ def _read_client_readiness_brief(db_session: Session) -> dict[str, Any]:
 
 
 def _render_client_brief(brief: dict[str, Any], *, data_mode: str) -> str:
-    mode_label = (
-        "Live candidate scoring"
-        if data_mode == "live_candidate_scoring"
-        else "Seeded opportunity catalogue"
-    )
+    if data_mode == "live_candidate_scoring":
+        mode_label = "Live candidate scoring"
+    elif data_mode == "client_snapshot":
+        mode_label = "Client contender snapshot"
+    else:
+        mode_label = "Seeded opportunity catalogue"
     return f"""
       <article class="brief-card">
         <span>Scoring mode</span>

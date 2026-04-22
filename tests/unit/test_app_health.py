@@ -37,7 +37,7 @@ def test_dashboard_landing_page_returns_private_client_shell(
     assert 'href="/health"' in response.text
 
 
-def test_dashboard_contenders_page_returns_top_50_board(
+def test_dashboard_contenders_page_returns_contender_board(
     reader_headers: dict[str, str],
 ) -> None:
     client = TestClient(app)
@@ -93,7 +93,11 @@ def test_dashboard_summary_returns_texas_opportunity_catalog(
     assert payload["app_name"] == "dense-data-center-locator"
     assert payload["display_name"] == "Texas Private Client Siting Portal"
     assert payload["market"] == "Texas"
-    assert payload["data_mode"] in {"seeded_catalog", "live_candidate_scoring"}
+    assert payload["data_mode"] in {
+        "seeded_catalog",
+        "live_candidate_scoring",
+        "client_snapshot",
+    }
     assert payload["opportunity_count"] >= 50
     assert len(payload["featured_opportunities"]) == 6
     assert len(payload["opportunities"]) == payload["opportunity_count"]
@@ -114,11 +118,12 @@ def test_dashboard_summary_returns_texas_opportunity_catalog(
             for item in payload["opportunities"]
         )
     else:
-        assert 60 <= payload["opportunity_count"] <= 150
+        assert payload["opportunity_count"] == 136
         assert payload["hero_title"].startswith(
             f"{payload['opportunity_count']} live-ranked Texas opportunities"
         )
         assert any(item["confidence_score"] is not None for item in payload["opportunities"])
+        assert all(1.0 <= float(item["acreage"]) <= 2.0 for item in payload["opportunities"])
         counts: dict[str, int] = {}
         for item in payload["opportunities"]:
             counts[item["metro"]] = counts.get(item["metro"], 0) + 1
