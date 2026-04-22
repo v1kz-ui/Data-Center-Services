@@ -54,6 +54,309 @@ _FIELD_LINKS: tuple[tuple[str, str], ...] = (
     ("San Antonio", "Rio Grande Valley"),
     ("San Antonio", "El Paso"),
 )
+_PREMIUM_FONT_LINKS = """
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+"""
+_PREMIUM_SHARED_CSS = """
+          :root {
+            --font-sans: "Manrope", "Aptos", "Segoe UI", system-ui, sans-serif;
+            --font-display: "Instrument Serif", "Georgia", "Times New Roman", serif;
+            --font-mono: "JetBrains Mono", "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+            --bg: #f6f7f2;
+            --ink: #15211f;
+            --muted: #64716d;
+            --line: rgba(21, 33, 31, 0.12);
+            --panel: rgba(255, 255, 252, 0.88);
+            --panel-strong: rgba(255, 255, 255, 0.96);
+            --paper: rgba(255, 255, 252, 0.88);
+            --paper-strong: rgba(255, 255, 255, 0.96);
+            --teal: #08766d;
+            --navy: #19364c;
+            --gold: #ad7f28;
+            --rust: #96482e;
+            --sage: #697e5a;
+            --danger: #a61b1b;
+            --tier1: #08766d;
+            --tier2: #ad7f28;
+            --tier3: #65707b;
+            --shadow: 0 22px 58px rgba(21, 33, 31, 0.12);
+            --shadow-soft: 0 12px 30px rgba(21, 33, 31, 0.08);
+            font-family: var(--font-sans);
+          }
+
+          html {
+            text-rendering: optimizeLegibility;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background: #f6f7f2 !important;
+          }
+
+          body {
+            font-family: var(--font-sans) !important;
+            background:
+              linear-gradient(180deg, rgba(8, 118, 109, 0.08), transparent 34%),
+              linear-gradient(90deg, rgba(21, 33, 31, 0.035) 1px, transparent 1px),
+              linear-gradient(rgba(21, 33, 31, 0.035) 1px, transparent 1px),
+              linear-gradient(180deg, #fbfcf8 0%, #f6f7f2 48%, #edf0e7 100%) !important;
+            background-size: auto, 34px 34px, 34px 34px, auto !important;
+            font-feature-settings: "kern" 1, "liga" 1;
+          }
+
+          body::before,
+          body::after,
+          .hero-copy::before,
+          .hero-map::before {
+            display: none !important;
+          }
+
+          h1,
+          h2,
+          h3 {
+            font-family: var(--font-display) !important;
+            font-weight: 400 !important;
+            letter-spacing: 0 !important;
+            color: var(--ink);
+          }
+
+          h1,
+          .hero-copy h1 {
+            font-size: 4.65rem !important;
+            line-height: 0.95 !important;
+          }
+
+          h2 {
+            font-size: 2rem;
+            line-height: 1.05;
+          }
+
+          h3 {
+            font-size: 1.35rem;
+            line-height: 1.12;
+          }
+
+          p,
+          li,
+          td,
+          th,
+          small,
+          span {
+            letter-spacing: 0;
+          }
+
+          .eyebrow,
+          thead th,
+          th,
+          .metric-card span,
+          .stat-card span,
+          .decision-card span,
+          .dossier-card span,
+          .risk-card span,
+          .timeline-step span,
+          .brief-card span,
+          .hero-kicker span,
+          .map-badge,
+          .map-stat span {
+            font-family: var(--font-mono) !important;
+            letter-spacing: 0.08em !important;
+          }
+
+          .top-nav,
+          .quick-nav,
+          .detail-hero,
+          .hero,
+          .hero-copy,
+          .hero-map,
+          .panel,
+          .metric-card,
+          .stat-card,
+          .brief-card,
+          .featured-card,
+          .decision-card,
+          .dossier-card,
+          .risk-card,
+          .timeline-step,
+          .related-card,
+          .telemetry-card,
+          .corridor-row,
+          .phase-pill,
+          .evidence-row,
+          .detail-score-row,
+          .table-shell,
+          .map-stage,
+          .mini-map,
+          .map-focus-card {
+            border-radius: 8px !important;
+            border-color: var(--line) !important;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(250, 251, 246, 0.84)) !important;
+            box-shadow: var(--shadow-soft) !important;
+          }
+
+          .detail-hero,
+          .hero,
+          .panel {
+            box-shadow: var(--shadow) !important;
+          }
+
+          .dossier-panel,
+          .score-orbit {
+            background:
+              linear-gradient(135deg, rgba(25, 54, 76, 0.98), rgba(8, 118, 109, 0.86)),
+              #19364c !important;
+            color: white;
+          }
+
+          .map-stage,
+          .mini-map {
+            background:
+              linear-gradient(135deg, rgba(17, 34, 45, 0.96), rgba(18, 70, 72, 0.88) 45%, rgba(237, 240, 231, 0.92) 100%) !important;
+            border-color: rgba(255, 255, 255, 0.18) !important;
+            box-shadow:
+              inset 0 1px 0 rgba(255, 255, 255, 0.22),
+              0 18px 46px rgba(21, 33, 31, 0.14) !important;
+          }
+
+          .hero-link,
+          .action-link,
+          .detail-button,
+          .evidence-link,
+          .top-nav a,
+          .footer-links a,
+          .filters input,
+          .filters select {
+            border-radius: 999px !important;
+            box-shadow: 0 10px 24px rgba(21, 33, 31, 0.07);
+            transition:
+              transform 160ms ease,
+              box-shadow 160ms ease,
+              border-color 160ms ease,
+              background 160ms ease;
+          }
+
+          .hero-link:hover,
+          .hero-link:focus-visible,
+          .action-link:hover,
+          .action-link:focus-visible,
+          .detail-button:hover,
+          .detail-button:focus-visible,
+          .evidence-link:hover,
+          .evidence-link:focus-visible,
+          .top-nav a:hover,
+          .top-nav a:focus-visible,
+          .footer-links a:hover,
+          .footer-links a:focus-visible {
+            transform: translateY(-1px);
+            box-shadow: 0 16px 34px rgba(21, 33, 31, 0.12);
+            outline: none;
+          }
+
+          .hero-link.primary,
+          .action-link.primary,
+          .hero-primary-action,
+          .detail-button {
+            background: linear-gradient(135deg, #19364c, #08766d) !important;
+            color: white !important;
+          }
+
+          .meta-pill,
+          .rank-pill,
+          .stage-chip,
+          .strength-chip,
+          .headwind-chip,
+          .quick-nav a {
+            box-shadow: none !important;
+          }
+
+          .table-shell {
+            background: rgba(255, 255, 255, 0.94) !important;
+          }
+
+          table {
+            font-variant-numeric: tabular-nums;
+          }
+
+          thead th,
+          th {
+            background: rgba(246, 247, 242, 0.96) !important;
+            color: #52605c !important;
+            font-size: 0.76rem !important;
+            font-weight: 700 !important;
+          }
+
+          td {
+            color: #1f2b28;
+          }
+
+          tbody tr,
+          .opportunity-row,
+          .featured-card,
+          .related-card {
+            transition:
+              background 160ms ease,
+              transform 160ms ease,
+              box-shadow 160ms ease,
+              border-color 160ms ease;
+          }
+
+          .opportunity-row:hover,
+          .opportunity-row:focus-visible {
+            background: rgba(8, 118, 109, 0.075) !important;
+          }
+
+          .featured-card:hover,
+          .featured-card:focus-visible,
+          .related-card:hover,
+          .related-card:focus-visible {
+            border-color: rgba(8, 118, 109, 0.34) !important;
+          }
+
+          .score-ring,
+          .featured-score {
+            box-shadow:
+              inset 0 0 0 1px rgba(255, 255, 255, 0.4),
+              0 18px 46px rgba(8, 118, 109, 0.16) !important;
+          }
+
+          .score-meter,
+          .corridor-track {
+            background: rgba(21, 33, 31, 0.08) !important;
+          }
+
+          .score-meter i,
+          .corridor-fill {
+            background: linear-gradient(90deg, #08766d, #ad7f28) !important;
+          }
+
+          .filters input,
+          .filters select {
+            font: 600 0.95rem var(--font-sans) !important;
+          }
+
+          .footer-bar {
+            font-family: var(--font-mono);
+            letter-spacing: 0;
+          }
+
+          @media (max-width: 860px) {
+            h1,
+            .hero-copy h1 {
+              font-size: 2.85rem !important;
+              line-height: 0.98 !important;
+            }
+
+            h2 {
+              font-size: 1.72rem;
+            }
+          }
+
+          @media (max-width: 520px) {
+            h1,
+            .hero-copy h1 {
+              font-size: 2.45rem !important;
+            }
+          }
+"""
 
 
 def _isoformat_or_none(value: datetime | None) -> str | None:
@@ -1353,6 +1656,7 @@ def _render_contender_detail_page(
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>{escape(contender["site_name"])} | Contender Detail</title>
+        {_PREMIUM_FONT_LINKS}
         <style>
           :root {{
             color-scheme: light;
@@ -2121,6 +2425,7 @@ def _render_contender_detail_page(
               height: 148px;
             }}
           }}
+{_PREMIUM_SHARED_CSS}
         </style>
       </head>
       <body>
@@ -2423,6 +2728,7 @@ def contenders_page(_: DashboardAccess, db: DbSession) -> str:
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Texas Top {contender_count} Contenders</title>
+        {_PREMIUM_FONT_LINKS}
         <style>
           :root {{
             color-scheme: light;
@@ -3010,6 +3316,7 @@ def contenders_page(_: DashboardAccess, db: DbSession) -> str:
               width: 100%;
             }}
           }}
+{_PREMIUM_SHARED_CSS}
         </style>
       </head>
       <body>
@@ -3297,6 +3604,7 @@ def landing_page(_: DashboardAccess, db: DbSession) -> str:
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>{escape(summary["display_name"])}</title>
+        {_PREMIUM_FONT_LINKS}
         <style>
           :root {{
             color-scheme: light;
@@ -4404,6 +4712,7 @@ def landing_page(_: DashboardAccess, db: DbSession) -> str:
               width: 100%;
             }}
           }}
+{_PREMIUM_SHARED_CSS}
         </style>
       </head>
       <body>
