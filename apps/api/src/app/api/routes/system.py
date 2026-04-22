@@ -64,25 +64,27 @@ _PREMIUM_SHARED_CSS = """
             --font-sans: "Source Sans 3", "Avenir Next", "Segoe UI", system-ui, sans-serif;
             --font-display: "Cormorant Garamond", "Bodoni 72", "Didot", "Georgia", serif;
             --font-mono: "IBM Plex Mono", "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-            --bg: #f6f7f2;
-            --ink: #15211f;
-            --muted: #64716d;
-            --line: rgba(21, 33, 31, 0.12);
-            --panel: rgba(255, 255, 252, 0.88);
-            --panel-strong: rgba(255, 255, 255, 0.96);
-            --paper: rgba(255, 255, 252, 0.88);
-            --paper-strong: rgba(255, 255, 255, 0.96);
-            --teal: #08766d;
-            --navy: #19364c;
-            --gold: #ad7f28;
-            --rust: #96482e;
-            --sage: #697e5a;
-            --danger: #a61b1b;
-            --tier1: #08766d;
-            --tier2: #ad7f28;
-            --tier3: #65707b;
-            --shadow: 0 22px 58px rgba(21, 33, 31, 0.12);
-            --shadow-soft: 0 12px 30px rgba(21, 33, 31, 0.08);
+            --bg: #f3ead9;
+            --champagne: #f7efe0;
+            --champagne-deep: #e6d5b9;
+            --ink: #08162a;
+            --muted: #69717c;
+            --line: rgba(8, 22, 42, 0.15);
+            --panel: rgba(255, 250, 240, 0.9);
+            --panel-strong: rgba(255, 253, 247, 0.97);
+            --paper: rgba(255, 250, 240, 0.9);
+            --paper-strong: rgba(255, 253, 247, 0.97);
+            --teal: #1c416a;
+            --navy: #071a33;
+            --gold: #c9a24f;
+            --rust: #9b6a2f;
+            --sage: #817964;
+            --danger: #9f1d25;
+            --tier1: #071a33;
+            --tier2: #c9a24f;
+            --tier3: #7a8390;
+            --shadow: 0 24px 64px rgba(8, 22, 42, 0.16);
+            --shadow-soft: 0 14px 34px rgba(8, 22, 42, 0.1);
             font-family: var(--font-sans);
           }
 
@@ -96,10 +98,10 @@ _PREMIUM_SHARED_CSS = """
           body {
             font-family: var(--font-sans) !important;
             background:
-              linear-gradient(180deg, rgba(8, 118, 109, 0.08), transparent 34%),
-              linear-gradient(90deg, rgba(21, 33, 31, 0.035) 1px, transparent 1px),
-              linear-gradient(rgba(21, 33, 31, 0.035) 1px, transparent 1px),
-              linear-gradient(180deg, #fbfcf8 0%, #f6f7f2 48%, #edf0e7 100%) !important;
+              linear-gradient(180deg, rgba(201, 162, 79, 0.14), transparent 34%),
+              linear-gradient(90deg, rgba(8, 22, 42, 0.035) 1px, transparent 1px),
+              linear-gradient(rgba(8, 22, 42, 0.035) 1px, transparent 1px),
+              linear-gradient(180deg, #fffdf7 0%, #f7efe0 48%, #e8dcc7 100%) !important;
             background-size: auto, 34px 34px, 34px 34px, auto !important;
             font-feature-settings: "kern" 1, "liga" 1;
           }
@@ -189,7 +191,7 @@ _PREMIUM_SHARED_CSS = """
           .map-focus-card {
             border-radius: 8px !important;
             border-color: var(--line) !important;
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(250, 251, 246, 0.84)) !important;
+            background: linear-gradient(180deg, rgba(255, 253, 247, 0.94), rgba(247, 239, 224, 0.88)) !important;
             box-shadow: var(--shadow-soft) !important;
           }
 
@@ -202,19 +204,19 @@ _PREMIUM_SHARED_CSS = """
           .dossier-panel,
           .score-orbit {
             background:
-              linear-gradient(135deg, rgba(25, 54, 76, 0.98), rgba(8, 118, 109, 0.86)),
-              #19364c !important;
+              linear-gradient(135deg, rgba(7, 26, 51, 0.99), rgba(24, 58, 98, 0.96) 70%, rgba(122, 92, 34, 0.88)),
+              #071a33 !important;
             color: white;
           }
 
           .map-stage,
           .mini-map {
             background:
-              linear-gradient(135deg, rgba(17, 34, 45, 0.96), rgba(18, 70, 72, 0.88) 45%, rgba(237, 240, 231, 0.92) 100%) !important;
+              linear-gradient(135deg, rgba(7, 26, 51, 0.98), rgba(22, 51, 87, 0.94) 45%, rgba(230, 213, 185, 0.94) 100%) !important;
             border-color: rgba(255, 255, 255, 0.18) !important;
             box-shadow:
               inset 0 1px 0 rgba(255, 255, 255, 0.22),
-              0 18px 46px rgba(21, 33, 31, 0.14) !important;
+              0 18px 46px rgba(8, 22, 42, 0.18) !important;
           }
 
           .hero-link,
@@ -226,7 +228,7 @@ _PREMIUM_SHARED_CSS = """
           .filters input,
           .filters select {
             border-radius: 999px !important;
-            box-shadow: 0 10px 24px rgba(21, 33, 31, 0.07);
+            box-shadow: 0 10px 24px rgba(8, 22, 42, 0.09);
             transition:
               transform 160ms ease,
               box-shadow 160ms ease,
@@ -247,7 +249,7 @@ _PREMIUM_SHARED_CSS = """
           .footer-links a:hover,
           .footer-links a:focus-visible {
             transform: translateY(-1px);
-            box-shadow: 0 16px 34px rgba(21, 33, 31, 0.12);
+            box-shadow: 0 16px 34px rgba(8, 22, 42, 0.16);
             outline: none;
           }
 
@@ -255,7 +257,7 @@ _PREMIUM_SHARED_CSS = """
           .action-link.primary,
           .hero-primary-action,
           .detail-button {
-            background: linear-gradient(135deg, #19364c, #08766d) !important;
+            background: linear-gradient(135deg, #071a33 0%, #183a62 58%, #c9a24f 132%) !important;
             color: white !important;
           }
 
@@ -268,6 +270,34 @@ _PREMIUM_SHARED_CSS = """
             box-shadow: none !important;
           }
 
+          .quick-nav a:hover,
+          .quick-nav a:focus-visible {
+            background: linear-gradient(135deg, #071a33, #183a62 62%, #c9a24f 132%) !important;
+            color: white !important;
+          }
+
+          .meta-pill {
+            background: rgba(255, 253, 247, 0.8) !important;
+            border-color: rgba(201, 162, 79, 0.2) !important;
+          }
+
+          .rank-pill {
+            background: rgba(7, 26, 51, 0.08) !important;
+            color: var(--navy) !important;
+          }
+
+          .stage-chip,
+          .strength-chip {
+            background: rgba(201, 162, 79, 0.14) !important;
+            color: var(--navy) !important;
+            border: 1px solid rgba(201, 162, 79, 0.24) !important;
+          }
+
+          .status-pill.live {
+            background: rgba(201, 162, 79, 0.16) !important;
+            color: var(--navy) !important;
+          }
+
           .table-shell {
             background: rgba(255, 255, 255, 0.94) !important;
           }
@@ -278,14 +308,14 @@ _PREMIUM_SHARED_CSS = """
 
           thead th,
           th {
-            background: rgba(246, 247, 242, 0.96) !important;
-            color: #52605c !important;
+            background: rgba(247, 239, 224, 0.96) !important;
+            color: #59606a !important;
             font-size: 0.76rem !important;
             font-weight: 700 !important;
           }
 
           td {
-            color: #1f2b28;
+            color: #111f35;
           }
 
           tbody tr,
@@ -301,31 +331,49 @@ _PREMIUM_SHARED_CSS = """
 
           .opportunity-row:hover,
           .opportunity-row:focus-visible {
-            background: rgba(8, 118, 109, 0.075) !important;
+            background: rgba(201, 162, 79, 0.11) !important;
           }
 
           .featured-card:hover,
           .featured-card:focus-visible,
           .related-card:hover,
           .related-card:focus-visible {
-            border-color: rgba(8, 118, 109, 0.34) !important;
+            border-color: rgba(201, 162, 79, 0.42) !important;
           }
 
           .score-ring,
           .featured-score {
             box-shadow:
               inset 0 0 0 1px rgba(255, 255, 255, 0.4),
-              0 18px 46px rgba(8, 118, 109, 0.16) !important;
+              0 18px 46px rgba(201, 162, 79, 0.18) !important;
           }
 
           .score-meter,
           .corridor-track {
-            background: rgba(21, 33, 31, 0.08) !important;
+            background: rgba(8, 22, 42, 0.1) !important;
           }
 
           .score-meter i,
           .corridor-fill {
-            background: linear-gradient(90deg, #08766d, #ad7f28) !important;
+            background: linear-gradient(90deg, #071a33, #1c416a 48%, #c9a24f) !important;
+          }
+
+          .map-badge::before {
+            background: linear-gradient(135deg, #f2d98f, #c9a24f) !important;
+            box-shadow: 0 0 16px rgba(201, 162, 79, 0.72) !important;
+          }
+
+          .map-stage::after {
+            background: linear-gradient(
+              180deg,
+              transparent 0%,
+              rgba(201, 162, 79, 0.18) 48%,
+              transparent 100%
+            ) !important;
+          }
+
+          .map-shell {
+            filter: drop-shadow(0 0 16px rgba(201, 162, 79, 0.22)) !important;
           }
 
           .filters input,
