@@ -57,13 +57,13 @@ _FIELD_LINKS: tuple[tuple[str, str], ...] = (
 _PREMIUM_FONT_LINKS = """
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-        <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 """
 _PREMIUM_SHARED_CSS = """
           :root {
-            --font-sans: "Manrope", "Aptos", "Segoe UI", system-ui, sans-serif;
-            --font-display: "Instrument Serif", "Georgia", "Times New Roman", serif;
-            --font-mono: "JetBrains Mono", "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+            --font-sans: "Source Sans 3", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+            --font-display: "Cormorant Garamond", "Bodoni 72", "Didot", "Georgia", serif;
+            --font-mono: "IBM Plex Mono", "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
             --bg: #f6f7f2;
             --ink: #15211f;
             --muted: #64716d;
@@ -115,7 +115,7 @@ _PREMIUM_SHARED_CSS = """
           h2,
           h3 {
             font-family: var(--font-display) !important;
-            font-weight: 400 !important;
+            font-weight: 600 !important;
             letter-spacing: 0 !important;
             color: var(--ink);
           }
@@ -127,12 +127,12 @@ _PREMIUM_SHARED_CSS = """
           }
 
           h2 {
-            font-size: 2rem;
+            font-size: 2.08rem;
             line-height: 1.05;
           }
 
           h3 {
-            font-size: 1.35rem;
+            font-size: 1.42rem;
             line-height: 1.12;
           }
 
@@ -159,7 +159,7 @@ _PREMIUM_SHARED_CSS = """
           .map-badge,
           .map-stat span {
             font-family: var(--font-mono) !important;
-            letter-spacing: 0.08em !important;
+            letter-spacing: 0 !important;
           }
 
           .top-nav,
