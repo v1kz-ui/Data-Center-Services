@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     auth_subject_header: str = "X-DDCL-Subject"
     auth_name_header: str = "X-DDCL-Name"
     auth_roles_header: str = "X-DDCL-Roles"
+    dashboard_password: str | None = Field(default=None, alias="DASHBOARD_PASSWORD")
 
     db_host: str = "localhost"
     db_port: int = 5432

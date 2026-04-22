@@ -4,7 +4,14 @@ import logging
 
 from fastapi.testclient import TestClient
 
+from app.core.settings import Settings, get_settings
 from app.main import create_app
+
+
+def _client_with_dashboard_password(password: str) -> TestClient:
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: Settings(DASHBOARD_PASSWORD=password)
+    return TestClient(app)
 
 
 def test_orchestration_plan_requires_authentication() -> None:
@@ -14,6 +21,35 @@ def test_orchestration_plan_requires_authentication() -> None:
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Authentication headers are required."
+
+
+def test_dashboard_password_allows_reader_access() -> None:
+    client = _client_with_dashboard_password("datacenter")
+
+    response = client.get("/dashboard/summary", auth=("client", "datacenter"))
+
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "Texas Private Client Siting Portal"
+
+
+def test_dashboard_password_rejects_missing_or_wrong_password() -> None:
+    client = _client_with_dashboard_password("datacenter")
+
+    missing_response = client.get("/dashboard/summary")
+    wrong_response = client.get("/dashboard/summary", auth=("client", "wrong"))
+
+    assert missing_response.status_code == 401
+    assert missing_response.headers["WWW-Authenticate"] == "Basic"
+    assert wrong_response.status_code == 401
+    assert wrong_response.headers["WWW-Authenticate"] == "Basic"
+
+
+def test_dashboard_password_does_not_grant_admin_access() -> None:
+    client = _client_with_dashboard_password("datacenter")
+
+    response = client.get("/foundation/tables", auth=("client", "datacenter"))
+
+    assert response.status_code == 403
 
 
 def test_operator_role_can_access_orchestration_plan(

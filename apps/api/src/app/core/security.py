@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
+import secrets
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Annotated
@@ -29,6 +32,41 @@ class AuthenticatedPrincipal:
 SettingsDependency = Annotated[Settings, Depends(get_settings)]
 
 
+def _basic_auth_principal(
+    request: Request,
+    settings: Settings,
+) -> AuthenticatedPrincipal | None:
+    if not settings.dashboard_password:
+        return None
+
+    authorization = request.headers.get("Authorization")
+    if not authorization:
+        return None
+
+    scheme, _, encoded_credentials = authorization.partition(" ")
+    if scheme.lower() != "basic" or not encoded_credentials:
+        return None
+
+    try:
+        decoded = base64.b64decode(encoded_credentials, validate=True).decode("utf-8")
+    except (UnicodeDecodeError, binascii.Error):
+        return None
+
+    username, separator, password = decoded.partition(":")
+    if not separator:
+        return None
+
+    if not secrets.compare_digest(password, settings.dashboard_password):
+        return None
+
+    return AuthenticatedPrincipal(
+        subject=username or "dashboard-viewer",
+        display_name=username or "Dashboard Viewer",
+        roles=frozenset({AppRole.READER}),
+        auth_source="basic-password",
+    )
+
+
 def get_current_principal(
     request: Request,
     settings: SettingsDependency,
@@ -40,6 +78,10 @@ def get_current_principal(
             roles=frozenset({AppRole.ADMIN, AppRole.OPERATOR, AppRole.READER}),
             auth_source="auth-disabled",
         )
+
+    basic_principal = _basic_auth_principal(request, settings)
+    if basic_principal is not None:
+        return basic_principal
 
     subject = request.headers.get(settings.auth_subject_header)
     raw_roles = request.headers.get(settings.auth_roles_header)
@@ -53,7 +95,16 @@ def get_current_principal(
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication headers are required.",
+            detail=(
+                "Authentication credentials are required."
+                if settings.dashboard_password
+                else "Authentication headers are required."
+            ),
+            headers=(
+                {"WWW-Authenticate": "Basic"}
+                if settings.dashboard_password
+                else None
+            ),
         )
 
     roles = frozenset(
