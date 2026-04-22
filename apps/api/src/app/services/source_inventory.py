@@ -92,6 +92,7 @@ class SourceInventoryCoverageItem:
     category: str
     phase: int
     implemented: bool
+    live_ready: bool
     connector_keys: list[str] = field(default_factory=list)
     enabled_connector_keys: list[str] = field(default_factory=list)
 
@@ -102,6 +103,8 @@ class SourceInventoryCoveragePhase:
     total_sources: int
     covered_sources: int
     uncovered_sources: int
+    live_ready_sources: int
+    not_live_ready_sources: int
 
 
 @dataclass(slots=True)
@@ -110,6 +113,9 @@ class SourceInventoryCoverage:
     covered_sources: int
     uncovered_sources: int
     coverage_percent: float
+    live_ready_sources: int
+    not_live_ready_sources: int
+    live_ready_percent: float
     phase_coverage: list[SourceInventoryCoveragePhase]
     covered_if_codes: list[str]
     uncovered_if_codes: list[str]
@@ -270,6 +276,7 @@ def build_source_inventory_coverage(
     items: list[SourceInventoryCoverageItem] = []
     covered_if_codes: list[str] = []
     uncovered_if_codes: list[str] = []
+    live_ready_if_codes: list[str] = []
 
     for source in filtered_sources:
         connectors = sorted(
@@ -285,10 +292,13 @@ def build_source_inventory_coverage(
             definition.connector_key for definition in connectors if definition.enabled
         ]
         implemented = bool(connector_keys)
+        live_ready = bool(enabled_connector_keys)
         if implemented:
             covered_if_codes.append(source.if_code)
         else:
             uncovered_if_codes.append(source.if_code)
+        if live_ready:
+            live_ready_if_codes.append(source.if_code)
 
         items.append(
             SourceInventoryCoverageItem(
@@ -297,6 +307,7 @@ def build_source_inventory_coverage(
                 category=source.category,
                 phase=source.phase,
                 implemented=implemented,
+                live_ready=live_ready,
                 connector_keys=connector_keys,
                 enabled_connector_keys=enabled_connector_keys,
             )
@@ -320,19 +331,40 @@ def build_source_inventory_coverage(
                     if item.phase == phase_key and not item.implemented
                 ]
             ),
+            live_ready_sources=len(
+                [
+                    item
+                    for item in items
+                    if item.phase == phase_key and item.live_ready
+                ]
+            ),
+            not_live_ready_sources=len(
+                [
+                    item
+                    for item in items
+                    if item.phase == phase_key and not item.live_ready
+                ]
+            ),
         )
         for phase_key in sorted({item.phase for item in items})
     ]
 
     total_sources = len(filtered_sources)
     covered_sources = len(covered_if_codes)
+    live_ready_sources = len(live_ready_if_codes)
     coverage_percent = round((covered_sources / total_sources) * 100, 2) if total_sources else 0.0
+    live_ready_percent = (
+        round((live_ready_sources / total_sources) * 100, 2) if total_sources else 0.0
+    )
 
     return SourceInventoryCoverage(
         total_sources=total_sources,
         covered_sources=covered_sources,
         uncovered_sources=len(uncovered_if_codes),
         coverage_percent=coverage_percent,
+        live_ready_sources=live_ready_sources,
+        not_live_ready_sources=total_sources - live_ready_sources,
+        live_ready_percent=live_ready_percent,
         phase_coverage=phase_coverage,
         covered_if_codes=covered_if_codes,
         uncovered_if_codes=uncovered_if_codes,

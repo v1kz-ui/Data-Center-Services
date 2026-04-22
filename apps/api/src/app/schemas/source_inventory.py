@@ -72,6 +72,7 @@ class SourceInventoryCoverageItemResponse(BaseModel):
     category: str
     phase: int
     implemented: bool
+    live_ready: bool
     connector_keys: list[str]
     enabled_connector_keys: list[str]
 
@@ -83,6 +84,8 @@ class SourceInventoryCoveragePhaseResponse(BaseModel):
     total_sources: int
     covered_sources: int
     uncovered_sources: int
+    live_ready_sources: int
+    not_live_ready_sources: int
 
 
 class SourceInventoryCoverageResponse(BaseModel):
@@ -92,6 +95,9 @@ class SourceInventoryCoverageResponse(BaseModel):
     covered_sources: int
     uncovered_sources: int
     coverage_percent: float
+    live_ready_sources: int
+    not_live_ready_sources: int
+    live_ready_percent: float
     phase_coverage: list[SourceInventoryCoveragePhaseResponse]
     covered_if_codes: list[str]
     uncovered_if_codes: list[str]

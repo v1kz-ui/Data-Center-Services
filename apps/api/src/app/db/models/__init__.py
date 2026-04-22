@@ -11,6 +11,7 @@ from app.db.models.catalogs import (
 from app.db.models.connectors import SourceRefreshCheckpoint, SourceRefreshJob
 from app.db.models.evaluation import ParcelEvaluation, ParcelExclusionEvent
 from app.db.models.ingestion import SourceSnapshot
+from app.db.models.market import ListingSourceCatalog, MarketListing
 from app.db.models.operations import OperatorActionEvent
 from app.db.models.scoring import ScoreBonusDetail, ScoreFactorDetail, ScoreFactorInput
 from app.db.models.source_data import RawZoning, SourceEvidence, SourceRecordRejection
@@ -39,6 +40,8 @@ __all__ = [
     "BonusCatalog",
     "CountyCatalog",
     "FactorCatalog",
+    "ListingSourceCatalog",
+    "MarketListing",
     "MANAGED_TABLES",
     "MetroCatalog",
     "OperatorActionEvent",

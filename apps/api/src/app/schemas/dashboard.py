@@ -34,12 +34,27 @@ class TexasOpportunityResponse(BaseModel):
     fiber_score: int
     water_score: int
     talent_score: int
+    social_score: int
+    political_score: int
+    approval_score: int
     readiness_stage: str
+    social_category: str
+    political_category: str
+    approval_stage: str
+    approval_headwinds: list[str]
+    approval_summary: str
     score_band: str
     strengths: list[str]
     summary: str
     lat: float
     lon: float
+    confidence_score: int | None = None
+    listing_source_id: str | None = None
+    listing_status: str | None = None
+    asking_price: float | None = None
+    source_url: str | None = None
+    source_listing_key: str | None = None
+    market_listing_id: str | None = None
 
 
 class DashboardCorridorResponse(BaseModel):

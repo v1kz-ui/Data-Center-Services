@@ -119,6 +119,32 @@ def test_evaluate_run_fails_when_freshness_gate_fails(db_session: Session) -> No
     assert db_session.query(ParcelEvaluation).count() == 0
 
 
+def test_evaluate_run_can_scope_to_target_parcels_and_skip_freshness_gate(
+    db_session: Session,
+) -> None:
+    run_id = _seed_evaluation_context(db_session, include_fresh_snapshots=False)
+
+    summary = evaluate_run(
+        db_session,
+        run_id,
+        EvaluationPolicy(
+            rule_version="phase4-r1",
+            minimum_acreage=Decimal("10"),
+            blocked_zoning_codes=("RES",),
+            parcel_ids=("P-SURVIVE", "P-ZONING"),
+            skip_freshness_gate=True,
+        ),
+    )
+
+    evaluations = db_session.query(ParcelEvaluation).order_by(ParcelEvaluation.parcel_id).all()
+
+    assert summary.run_status == "running"
+    assert summary.evaluated_count == 2
+    assert [evaluation.parcel_id for evaluation in evaluations] == ["P-SURVIVE", "P-ZONING"]
+    assert evaluations[0].status is ParcelEvaluationStatus.PENDING_SCORING
+    assert evaluations[1].status is ParcelEvaluationStatus.EXCLUDED
+
+
 def test_evaluate_run_blocks_replay_when_scoring_outputs_exist(db_session: Session) -> None:
     run_id = _seed_evaluation_context(db_session)
     run = db_session.get(ScoreRun, UUID(run_id))

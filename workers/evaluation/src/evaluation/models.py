@@ -21,6 +21,9 @@ class EvaluationPolicy:
     blocked_zoning_codes: tuple[str, ...] = ()
     blocked_land_use_codes: tuple[str, ...] = ()
     evidence_exclusion_rules: tuple[EvidenceExclusionRule, ...] = ()
+    parcel_ids: tuple[str, ...] = ()
+    freshness_source_ids: tuple[str, ...] = ()
+    skip_freshness_gate: bool = False
     restart_failed_run: bool = True
 
 

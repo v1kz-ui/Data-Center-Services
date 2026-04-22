@@ -51,6 +51,9 @@ def evaluate_run(
 ) -> EvaluationSummary:
     run = _get_run(session, run_id)
     now = datetime.now(UTC)
+    scoped_parcel_ids = tuple(
+        dict.fromkeys(parcel_id for parcel_id in policy.parcel_ids if parcel_id)
+    )
 
     if run.status is ScoreRunStatus.FAILED and not policy.restart_failed_run:
         raise EvaluationReplayBlockedError(
@@ -60,29 +63,38 @@ def evaluate_run(
     _ensure_no_scoring_outputs(session, run.run_id)
     _reset_run_for_replay(run)
 
-    freshness_report = evaluate_freshness(session, run.metro_id, evaluated_at=now)
-    if not freshness_report.passed:
-        first_failure = next(status for status in freshness_report.statuses if not status.passed)
-        run.status = ScoreRunStatus.FAILED
-        run.failure_reason = first_failure.freshness_code
-        run.completed_at = now
-        _clear_run_evaluation_state(session, run.run_id)
-        reconcile_batch_for_run(session, run.run_id)
-        session.commit()
-        return get_evaluation_summary(session, run.run_id, rule_version=policy.rule_version)
+    if not policy.skip_freshness_gate:
+        freshness_report = evaluate_freshness(
+            session,
+            run.metro_id,
+            evaluated_at=now,
+            source_ids=policy.freshness_source_ids or None,
+        )
+        if not freshness_report.passed:
+            first_failure = next(
+                status for status in freshness_report.statuses if not status.passed
+            )
+            run.status = ScoreRunStatus.FAILED
+            run.failure_reason = first_failure.freshness_code
+            run.completed_at = now
+            _clear_run_evaluation_state(session, run.run_id)
+            reconcile_batch_for_run(session, run.run_id)
+            session.commit()
+            return get_evaluation_summary(session, run.run_id, rule_version=policy.rule_version)
 
     _clear_run_evaluation_state(session, run.run_id)
 
     county_fips_values = session.scalars(
         select(CountyCatalog.county_fips).where(CountyCatalog.metro_id == run.metro_id)
     ).all()
-    parcel_rows = session.scalars(
-        select(RawParcel).where(
-            RawParcel.metro_id == run.metro_id,
-            RawParcel.county_fips.in_(county_fips_values),
-            RawParcel.is_active.is_(True),
-        )
-    ).all()
+    parcel_statement = select(RawParcel).where(
+        RawParcel.metro_id == run.metro_id,
+        RawParcel.county_fips.in_(county_fips_values),
+        RawParcel.is_active.is_(True),
+    )
+    if scoped_parcel_ids:
+        parcel_statement = parcel_statement.where(RawParcel.parcel_id.in_(scoped_parcel_ids))
+    parcel_rows = session.scalars(parcel_statement).all()
     parcel_ids = [parcel.parcel_id for parcel in parcel_rows]
 
     zoning_rows = session.scalars(

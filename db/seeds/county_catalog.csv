@@ -3,11 +3,16 @@ county_fips,metro_id,display_name,state_code,is_active
 48113,DFW,Dallas,TX,true
 48121,DFW,Denton,TX,true
 48257,DFW,Kaufman,TX,true
-48439,DFW,Tarrant,TX,true
 48397,DFW,Rockwall,TX,true
-48209,AUS,Hays,TX,true
+48439,DFW,Tarrant,TX,true
+48157,HOU,Fort Bend,TX,true
+48201,HOU,Harris,TX,true
+48339,HOU,Montgomery,TX,true
+48029,SAT,Bexar,TX,true
 48453,AUS,Travis,TX,true
 48491,AUS,Williamson,TX,true
-04013,PHX,Maricopa,AZ,true
-04021,PHX,Pinal,AZ,true
-32003,LAS,Clark,NV,true
+48141,ELP,El Paso,TX,true
+48479,LRD,Webb,TX,true
+48215,MFE,Hidalgo,TX,true
+48355,CRP,Nueces,TX,true
+48329,MAF,Midland,TX,true

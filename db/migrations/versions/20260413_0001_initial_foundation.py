@@ -7,6 +7,7 @@ Create Date: 2026-04-13 22:45:00
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "20260413_0001"
 down_revision = None
@@ -14,9 +15,28 @@ branch_labels = None
 depends_on = None
 
 
-score_batch_status = sa.Enum("building", "failed", "completed", "active", name="score_batch_status")
-score_run_status = sa.Enum("running", "failed", "completed", name="score_run_status")
-scoring_profile_status = sa.Enum("draft", "active", "retired", name="scoring_profile_status")
+score_batch_status = postgresql.ENUM(
+    "building",
+    "failed",
+    "completed",
+    "active",
+    name="score_batch_status",
+    create_type=False,
+)
+score_run_status = postgresql.ENUM(
+    "running",
+    "failed",
+    "completed",
+    name="score_run_status",
+    create_type=False,
+)
+scoring_profile_status = postgresql.ENUM(
+    "draft",
+    "active",
+    "retired",
+    name="scoring_profile_status",
+    create_type=False,
+)
 
 
 def audit_columns() -> tuple[sa.Column, sa.Column]:

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -51,6 +52,7 @@ def get_connector_definitions(
 def get_connector_refresh_plan(
     db: DbSession,
     settings: AppSettings,
+    as_of: datetime | None = None,
 ) -> list[SourceRefreshPlanItemResponse]:
     try:
         registry = load_connector_registry(settings.source_connector_config_path)
@@ -59,7 +61,7 @@ def get_connector_refresh_plan(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
-    plan = build_refresh_plan(db, registry)
+    plan = build_refresh_plan(db, registry, as_of=as_of)
     return [SourceRefreshPlanItemResponse.model_validate(item) for item in plan]
 
 

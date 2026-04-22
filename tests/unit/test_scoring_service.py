@@ -126,6 +126,23 @@ def test_score_run_rejects_invalid_profile_budget(db_session: Session) -> None:
         score_run(db_session, run_id, ScoringPolicy())
 
 
+def test_score_run_can_skip_freshness_gate(db_session: Session) -> None:
+    run_id = _seed_scoring_context(db_session)
+    db_session.query(SourceSnapshot).delete()
+    db_session.commit()
+
+    summary = score_run(
+        db_session,
+        run_id,
+        ScoringPolicy(
+            skip_freshness_gate=True,
+        ),
+    )
+
+    assert summary.run_status == "completed"
+    assert summary.scored_count == 2
+
+
 def _evaluation_id_for(session: Session, run_id: str, parcel_id: str) -> str:
     evaluation = (
         session.query(ParcelEvaluation)

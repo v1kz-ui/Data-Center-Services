@@ -1,4 +1,8 @@
 {
+  "inventory_blueprints": {
+    "enabled": true,
+    "authoritative_inventory_path": "authoritative_source_inventory.json"
+  },
   "definitions": [
     {
       "connector_key": "dfw_parcel_pilot",
@@ -51,17 +55,17 @@
       "metro_id": "DFW",
       "interface_name": "arcgis_dallas_tax_parcels_v1",
       "adapter_type": "arcgis_feature_service",
-      "enabled": false,
+      "enabled": true,
       "priority": 10,
       "description": "Disabled live Dallas ArcGIS parcel blueprint for DFW counties served by the Dallas tax parcel service.",
       "fetch_policy": {
-        "max_attempts": 3,
-        "backoff_seconds": 1.0,
-        "rate_limit_per_minute": 30
+        "max_attempts": 4,
+        "backoff_seconds": 3.0,
+        "rate_limit_per_minute": 12
       },
       "request": {
         "endpoint_url": "https://gis.dallascityhall.com/arcgis/rest/services/Basemap/DallasTaxParcels/FeatureServer/0",
-        "timeout_seconds": 45.0,
+        "timeout_seconds": 90.0,
         "query_params": {
           "where": "1=1",
           "outFields": "OBJECTID,AREA_FEET,ACCT,GIS_ACCT,COUNTY",
@@ -71,7 +75,7 @@
         },
         "pagination": {
           "strategy": "arcgis_offset",
-          "page_size": 1000,
+          "page_size": 500,
           "offset_param": "resultOffset",
           "page_size_param": "resultRecordCount"
         }
@@ -85,14 +89,24 @@
             "map": {
               "Collin": "48085",
               "Collin County": "48085",
+              "COLLIN": "48085",
+              "COLLIN COUNTY": "48085",
               "Dallas": "48113",
               "Dallas County": "48113",
+              "DALLAS": "48113",
+              "DALLAS COUNTY": "48113",
               "Denton": "48121",
               "Denton County": "48121",
+              "DENTON": "48121",
+              "DENTON COUNTY": "48121",
               "Kaufman": "48257",
               "Kaufman County": "48257",
+              "KAUFMAN": "48257",
+              "KAUFMAN COUNTY": "48257",
               "Rockwall": "48397",
-              "Rockwall County": "48397"
+              "Rockwall County": "48397",
+              "ROCKWALL": "48397",
+              "ROCKWALL COUNTY": "48397"
             }
           }
         },
@@ -113,6 +127,1062 @@
           "target": "acreage",
           "source": "AREA_FEET",
           "transform": "square_feet_to_acres"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if029_dcad_parcels_live",
+      "source_id": "IF-029",
+      "metro_id": "DFW",
+      "interface_name": "if-029-http-zip-shapefile-v1",
+      "adapter_type": "http_zip_shapefile",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-029"
+      ],
+      "priority": 1,
+      "description": "Dallas Central Appraisal District parcel geometry bulk ZIP for authoritative Dallas County parcel coverage.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 2.0,
+        "rate_limit_per_minute": 4
+      },
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro"
+      },
+      "request": {
+        "endpoint_url": "https://www.dallascad.org/ViewPDFs.aspx?type=3&id=%5C%5CDCAD.ORG%5CWEB%5CWEBDATA%5CWEBFORMS%5CGIS%20PRODUCTS%5CPARCEL_GEOM.zip",
+        "timeout_seconds": 180.0
+      },
+      "static_fields": {
+        "county_fips": "48113"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "source": "Acct",
+          "transform": "strip"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "DFW:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": [
+            "RecAcs",
+            "__geometry_native_area__"
+          ],
+          "transform": "acreage_text_or_square_feet"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if030_tad_parcels_live",
+      "source_id": "IF-030",
+      "metro_id": "DFW",
+      "interface_name": "if-030-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-030"
+      ],
+      "priority": 1,
+      "description": "Tarrant Appraisal District parcel feature service for authoritative Tarrant County parcel coverage.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 2.0,
+        "rate_limit_per_minute": 10
+      },
+      "row_filters": [
+        {
+          "source": "ACCOUNT",
+          "operator": "exists"
+        },
+        {
+          "source": "__geometry__",
+          "operator": "exists"
+        }
+      ],
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro"
+      },
+      "request": {
+        "endpoint_url": "https://mapit.tarrantcounty.com/arcgis/rest/services/Dynamic/TADParcels/FeatureServer/0",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "ACCOUNT IS NOT NULL",
+          "outFields": "TAXPIN,ACCOUNT,LAND_ACRES,LAND_SQFT",
+          "returnGeometry": "true",
+          "f": "geojson",
+          "outSR": "4326"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "parallel_requests": 8,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "static_fields": {
+        "county_fips": "48439"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "source": [
+            "ACCOUNT",
+            "TAXPIN"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "DFW:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": [
+            "LAND_ACRES",
+            "LAND_SQFT"
+          ],
+          "transform": "acres_or_square_feet_by_source"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if031_collin_parcels_live",
+      "source_id": "IF-031",
+      "metro_id": "DFW",
+      "interface_name": "if-031-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-031"
+      ],
+      "priority": 1,
+      "description": "Collin CAD parcel feature service for authoritative Collin County parcel coverage.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 2.0,
+        "rate_limit_per_minute": 10
+      },
+      "row_filters": [
+        {
+          "source": "PROP_ID",
+          "operator": "exists"
+        }
+      ],
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro"
+      },
+      "request": {
+        "endpoint_url": "https://services2.arcgis.com/uXyoacYrZTPTKD3R/arcgis/rest/services/CCAD_Parcel_Feature_Set/FeatureServer/4",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "PROP_ID > 0",
+          "outFields": "PROP_ID,Shape__Area",
+          "returnGeometry": "true",
+          "f": "geojson",
+          "outSR": "4326"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 1000,
+          "parallel_requests": 8,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "static_fields": {
+        "county_fips": "48085"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "transform": "template",
+          "template": "COL-{PROP_ID:012d}"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "DFW:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": "Shape__Area",
+          "transform": "square_feet_to_acres"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if032_denton_parcels_live",
+      "source_id": "IF-032",
+      "metro_id": "DFW",
+      "interface_name": "if-032-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-032"
+      ],
+      "priority": 1,
+      "description": "Denton CAD parcel feature service for authoritative Denton County parcel coverage.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 2.0,
+        "rate_limit_per_minute": 10
+      },
+      "row_filters": [
+        {
+          "source": "prop_id",
+          "operator": "exists"
+        }
+      ],
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro"
+      },
+      "request": {
+        "endpoint_url": "https://geo.dentoncad.com/arcgis/rest/services/Public/Parcels_Standalone/MapServer/12",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "prop_id IS NOT NULL",
+          "outFields": "prop_id,Shape.STArea()",
+          "returnGeometry": "true",
+          "f": "geojson",
+          "outSR": "4326"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 1000,
+          "parallel_requests": 8,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "static_fields": {
+        "county_fips": "48121"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "transform": "template",
+          "template": "DEN-{prop_id:012d}"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "DFW:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": "Shape.STArea()",
+          "transform": "square_feet_to_acres"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if033_hcad_parcels_live",
+      "source_id": "IF-033",
+      "metro_id": "HOU",
+      "interface_name": "if-033-http-zip-shapefile-v1",
+      "adapter_type": "http_zip_shapefile",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-033"
+      ],
+      "priority": 1,
+      "description": "Harris Central Appraisal District parcel shapefile bulk download for authoritative Harris County parcel coverage.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 4.0,
+        "rate_limit_per_minute": 2
+      },
+      "row_filters": [
+        {
+          "source": "HCAD_NUM",
+          "operator": "exists"
+        }
+      ],
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro"
+      },
+      "request": {
+        "endpoint_url": "https://download.hcad.org/data/GIS/Parcels.zip",
+        "timeout_seconds": 600.0
+      },
+      "static_fields": {
+        "county_fips": "48201"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "source": [
+            "HCAD_NUM",
+            "LOWPARCELI"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "HOU:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": [
+            "Acreage",
+            "StatedArea",
+            "__geometry_native_area__"
+          ],
+          "transform": "cad_mixed_area_to_acres"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if034_fbcad_parcels_live",
+      "source_id": "IF-034",
+      "metro_id": "HOU",
+      "interface_name": "if-034-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-034"
+      ],
+      "priority": 1,
+      "description": "Fort Bend CAD public parcel service for authoritative Fort Bend County parcel coverage in the Houston metro.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 2.0,
+        "rate_limit_per_minute": 10
+      },
+      "row_filters": [
+        {
+          "source": "quickrefid",
+          "operator": "exists"
+        },
+        {
+          "source": "__geometry__",
+          "operator": "exists"
+        }
+      ],
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro"
+      },
+      "request": {
+        "endpoint_url": "https://gisweb.fbcad.org/arcgis/rest/services/Hosted/FBCAD_Public_Data/FeatureServer/0",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "quickrefid IS NOT NULL",
+          "outFields": "quickrefid,propnumber,landsizeac,SHAPE__Area",
+          "returnGeometry": "true",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "parallel_requests": 8,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "static_fields": {
+        "county_fips": "48157"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "source": [
+            "quickrefid",
+            "propnumber"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "HOU:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": "landsizeac",
+          "transform": "strip"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if037_tcad_parcels_live",
+      "source_id": "IF-037",
+      "metro_id": "AUS",
+      "interface_name": "if-037-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-037"
+      ],
+      "priority": 1,
+      "description": "Travis CAD public parcel map service for authoritative Travis County parcel coverage in the Austin metro.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 2.0,
+        "rate_limit_per_minute": 12
+      },
+      "row_filters": [
+        {
+          "source": "PROP_ID",
+          "operator": "exists"
+        }
+      ],
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro"
+      },
+      "request": {
+        "endpoint_url": "https://gis.traviscountytx.gov/server1/rest/services/Boundaries_and_Jurisdictions/TCAD_public/MapServer/0",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "PROP_ID > 0",
+          "outFields": "OBJECTID,PROP_ID,geo_id,tcad_acres",
+          "returnGeometry": "true",
+          "f": "geojson",
+          "outSR": "4326"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "parallel_requests": 8,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "static_fields": {
+        "county_fips": "48453"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "source": [
+            "geo_id",
+            "PROP_ID"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "AUS:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": "tcad_acres",
+          "transform": "strip"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if038_williamson_parcels_live",
+      "source_id": "IF-038",
+      "metro_id": "AUS",
+      "interface_name": "if-038-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-038"
+      ],
+      "priority": 1,
+      "description": "Williamson CAD cadastral parcel polygons for authoritative Williamson County parcel coverage in the Austin metro.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 2.0,
+        "rate_limit_per_minute": 10
+      },
+      "row_filters": [
+        {
+          "source": "PARCELID",
+          "operator": "exists"
+        }
+      ],
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro"
+      },
+      "request": {
+        "endpoint_url": "https://gisweb.wcad.org/server/rest/services/OrionMap/Cadastral/MapServer/2",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "PARCELID IS NOT NULL",
+          "outFields": "PARCELID,StatedArea,Shape_Area",
+          "returnGeometry": "true",
+          "f": "geojson",
+          "outSR": "4326"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "parallel_requests": 8,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "static_fields": {
+        "county_fips": "48491"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "source": "PARCELID",
+          "transform": "strip"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "AUS:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": [
+            "StatedArea",
+            "Shape_Area"
+          ],
+          "transform": "acreage_text_or_square_feet"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if036_bcad_parcels_live",
+      "source_id": "IF-036",
+      "metro_id": "SAT",
+      "interface_name": "if-036-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-036"
+      ],
+      "priority": 1,
+      "description": "Bexar Appraisal District parcel polygons for authoritative Bexar County parcel coverage in the San Antonio metro.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 2.0,
+        "rate_limit_per_minute": 8
+      },
+      "row_filters": [
+        {
+          "source": "PAMaps.DBO.ParcelFabric_Parcels.PROP_ID",
+          "operator": "exists"
+        },
+        {
+          "source": "PAMaps.dbo.web_map_property.geo_id",
+          "operator": "exists"
+        },
+        {
+          "source": "__geometry__",
+          "operator": "exists"
+        }
+      ],
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro"
+      },
+      "request": {
+        "endpoint_url": "https://maps.bcad.org/arcgis/rest/services/PAMapSearch/MapServer/6",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "PAMaps.DBO.ParcelFabric_Parcels.PROP_ID > 0",
+          "outFields": "PAMaps.DBO.ParcelFabric_Parcels.PROP_ID,PAMaps.dbo.web_map_property.geo_id",
+          "returnGeometry": "true",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "parallel_requests": 8,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "static_fields": {
+        "county_fips": "48029"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "source": [
+            "PAMaps.dbo.web_map_property.geo_id",
+            "PAMaps.DBO.ParcelFabric_Parcels.PROP_ID"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "SAT:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": "__geometry_native_area__",
+          "transform": "square_feet_to_acres"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if043_midland_parcels_live",
+      "source_id": "IF-043",
+      "metro_id": "MAF",
+      "interface_name": "if-043-http-zip-shapefile-v1",
+      "adapter_type": "http_zip_shapefile",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-043"
+      ],
+      "priority": 1,
+      "description": "Midland CAD owner shapefile bulk download for authoritative Midland County parcel coverage.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 4.0,
+        "rate_limit_per_minute": 2
+      },
+      "row_filters": [
+        {
+          "source": "PIN",
+          "operator": "exists"
+        }
+      ],
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro"
+      },
+      "request": {
+        "endpoint_url": "https://midcad.org/wp-content/uploads/2024/03/midlandCAD2024.zip",
+        "timeout_seconds": 300.0
+      },
+      "static_fields": {
+        "county_fips": "48329"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "source": "PIN",
+          "transform": "strip"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "MAF:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": "Acres",
+          "transform": "strip"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if042_nueces_parcels_live",
+      "source_id": "IF-042",
+      "metro_id": "CRP",
+      "interface_name": "if-042-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-042"
+      ],
+      "priority": 1,
+      "description": "Nueces CAD parcel polygons for authoritative Nueces County parcel coverage in the Corpus Christi metro.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 2.0,
+        "rate_limit_per_minute": 8
+      },
+      "row_filters": [
+        {
+          "source": "prop_id",
+          "operator": "exists"
+        }
+      ],
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro"
+      },
+      "request": {
+        "endpoint_url": "https://utility.arcgis.com/usrsvcs/servers/1f43cdaa05ee4c05bfb48b7da6aa4521/rest/services/NuecesCADWebService/FeatureServer/0",
+        "timeout_seconds": 180.0,
+        "query_params": {
+          "where": "prop_id IS NOT NULL",
+          "outFields": "prop_id_text,prop_id,geo_id,map_id,file_as_name,legal_desc,legal_acreage",
+          "returnGeometry": "true",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "parallel_requests": 8,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "static_fields": {
+        "county_fips": "48355"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "source": [
+            "geo_id",
+            "prop_id_text",
+            "prop_id"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "CRP:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": [
+            "legal_acreage",
+            "__geometry_native_area__"
+          ],
+          "transform": "acres_or_square_feet_by_source"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if035_mcad_parcels_live",
+      "source_id": "IF-035",
+      "metro_id": "HOU",
+      "interface_name": "if-035-trueprodigy-public-parcels-v1",
+      "adapter_type": "trueprodigy_public_parcels",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-035"
+      ],
+      "priority": 1,
+      "description": "Montgomery CAD public True Prodigy parcel geometry feed for authoritative Montgomery County parcel coverage in the Houston metro.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 2.0,
+        "rate_limit_per_minute": 180
+      },
+      "row_filters": [
+        {
+          "source": "pID",
+          "operator": "exists"
+        },
+        {
+          "source": "__geometry__",
+          "operator": "exists"
+        }
+      ],
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro",
+        "office": "Montgomery",
+        "token_endpoint_url": "https://prod-container.trueprodigyapi.com/trueprodigy/cadpublic/auth/token",
+        "tile_size_degrees": 0.05,
+        "pid_batch_size": 1000,
+        "parallel_requests": 8
+      },
+      "request": {
+        "endpoint_url": "https://prod-container.trueprodigyapi.com",
+        "timeout_seconds": 120.0
+      },
+      "static_fields": {
+        "county_fips": "48339"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "source": [
+            "geoID",
+            "pID"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "HOU:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": "tp_area",
+          "transform": "strip"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if041_hidalgo_parcels_live",
+      "source_id": "IF-041",
+      "metro_id": "MFE",
+      "interface_name": "if-041-trueprodigy-public-parcels-v1",
+      "adapter_type": "trueprodigy_public_parcels",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-041"
+      ],
+      "priority": 1,
+      "description": "Hidalgo CAD public True Prodigy parcel geometry feed for authoritative Hidalgo County parcel coverage in the McAllen metro.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 2.0,
+        "rate_limit_per_minute": 180
+      },
+      "row_filters": [
+        {
+          "source": "pID",
+          "operator": "exists"
+        },
+        {
+          "source": "__geometry__",
+          "operator": "exists"
+        }
+      ],
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro",
+        "office": "Hidalgo",
+        "token_endpoint_url": "https://prod-container.trueprodigyapi.com/trueprodigy/cadpublic/auth/token",
+        "tile_size_degrees": 0.05,
+        "pid_batch_size": 500
+      },
+      "request": {
+        "endpoint_url": "https://prod-container.trueprodigyapi.com",
+        "timeout_seconds": 120.0
+      },
+      "static_fields": {
+        "county_fips": "48215"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "source": [
+            "geoID",
+            "pID"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "MFE:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": "tp_area",
+          "transform": "strip"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "parcel:{parcel_id}"
+        }
+      ]
+    },
+    {
+      "connector_key": "if040_webbcad_parcels_live",
+      "source_id": "IF-040",
+      "metro_id": "LRD",
+      "interface_name": "if-040-trueprodigy-public-parcels-v1",
+      "adapter_type": "trueprodigy_public_parcels",
+      "enabled": true,
+      "load_strategy": "parcel",
+      "inventory_if_codes": [
+        "IF-040"
+      ],
+      "priority": 1,
+      "description": "Webb CAD public True Prodigy parcel geometry feed for authoritative Webb County parcel coverage in the Laredo metro.",
+      "fetch_policy": {
+        "max_attempts": 4,
+        "backoff_seconds": 2.0,
+        "rate_limit_per_minute": 180
+      },
+      "row_filters": [
+        {
+          "source": "pID",
+          "operator": "exists"
+        },
+        {
+          "source": "__geometry__",
+          "operator": "exists"
+        }
+      ],
+      "preprocess_options": {
+        "replace_existing_scope": "county_metro",
+        "office": "Webb",
+        "token_endpoint_url": "https://prod-container.trueprodigyapi.com/trueprodigy/cadpublic/auth/token",
+        "tile_size_degrees": 0.05,
+        "pid_batch_size": 500
+      },
+      "request": {
+        "endpoint_url": "https://prod-container.trueprodigyapi.com",
+        "timeout_seconds": 120.0
+      },
+      "static_fields": {
+        "county_fips": "48479"
+      },
+      "field_rules": [
+        {
+          "target": "apn",
+          "source": [
+            "geoID",
+            "pID"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "parcel_id",
+          "transform": "template",
+          "template": "LRD:{county_fips}:{apn}"
+        },
+        {
+          "target": "acreage",
+          "source": "tp_area",
+          "transform": "strip"
         },
         {
           "target": "geometry_wkt",
@@ -170,11 +1240,12 @@
     },
     {
       "connector_key": "dfw_dallas_arcgis_zoning_live",
-      "source_id": "ZONING",
+      "source_id": "IF-044",
       "metro_id": "DFW",
       "interface_name": "arcgis_dallas_base_zoning_v1",
       "adapter_type": "arcgis_feature_service",
-      "enabled": false,
+      "enabled": true,
+      "load_strategy": "zoning",
       "inventory_if_codes": [
         "IF-044"
       ],
@@ -234,11 +1305,12 @@
     },
     {
       "connector_key": "dfw_fort_worth_arcgis_zoning_live",
-      "source_id": "ZONING",
+      "source_id": "IF-045",
       "metro_id": "DFW",
       "interface_name": "arcgis_fort_worth_zoning_fill_v1",
       "adapter_type": "arcgis_feature_service",
-      "enabled": false,
+      "enabled": true,
+      "load_strategy": "zoning",
       "inventory_if_codes": [
         "IF-045"
       ],
@@ -251,6 +1323,12 @@
         "rate_limit_per_minute": 30,
         "checkpoint_field": "DATESTAMP"
       },
+      "row_filters": [
+        {
+          "source": "__geometry__",
+          "operator": "exists"
+        }
+      ],
       "request": {
         "endpoint_url": "https://mapit.fortworthtexas.gov/ags/rest/services/Planning_Development/Zoning/MapServer/25",
         "timeout_seconds": 45.0,
@@ -296,6 +1374,3637 @@
           "template": "zoning-overlay:{OBJECTID}"
         }
       ]
+    },
+    {
+      "connector_key": "sat_san_antonio_arcgis_zoning_live",
+      "source_id": "IF-046",
+      "metro_id": "SAT",
+      "interface_name": "if-046-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "zoning",
+      "inventory_if_codes": [
+        "IF-046"
+      ],
+      "priority": 10,
+      "description": "City of San Antonio zoning polygons expanded onto canonical SAT parcel representative points.",
+      "preprocess_strategy": "zoning_overlay_to_parcels",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 20
+      },
+      "row_filters": [
+        {
+          "source": "__geometry__",
+          "operator": "exists"
+        }
+      ],
+      "request": {
+        "endpoint_url": "https://gis.sanantonio.gov/ProxySticky/proxy.ashx?https://gis.sanantonio.gov/arcgis/rest/services/DSD/OneStop/MapServer/40/query",
+        "timeout_seconds": 90.0,
+        "query_params": {
+          "where": "OBJECTID > 0",
+          "outFields": "OBJECTID,Base,Zoning,ZoningDetail,BaseDescription,SpecDistrictDescription",
+          "returnGeometry": "true",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "field_rules": [
+        {
+          "target": "zoning_code",
+          "source": [
+            "ZoningDetail",
+            "Zoning",
+            "Base"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "land_use_code",
+          "source": [
+            "BaseDescription",
+            "SpecDistrictDescription",
+            "ZoningDetail"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "zoning-overlay:{OBJECTID}"
+        }
+      ]
+    },
+    {
+      "connector_key": "aus_austin_arcgis_zoning_live",
+      "source_id": "IF-047",
+      "metro_id": "AUS",
+      "interface_name": "if-047-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "zoning",
+      "inventory_if_codes": [
+        "IF-047"
+      ],
+      "priority": 10,
+      "description": "City of Austin zoning polygons expanded onto canonical AUS parcel representative points.",
+      "preprocess_strategy": "zoning_overlay_to_parcels",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 30
+      },
+      "row_filters": [
+        {
+          "source": "__geometry__",
+          "operator": "exists"
+        }
+      ],
+      "request": {
+        "endpoint_url": "https://maps.austintexas.gov/gis/rest/Shared/Zoning_1/MapServer/0",
+        "timeout_seconds": 60.0,
+        "query_params": {
+          "where": "1=1",
+          "outFields": "OBJECTID,ZONING_ZTYPE,ZONING_BASE",
+          "returnGeometry": "true",
+          "f": "geojson",
+          "outSR": "4326"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "field_rules": [
+        {
+          "target": "zoning_code",
+          "source": "ZONING_ZTYPE",
+          "transform": "strip"
+        },
+        {
+          "target": "land_use_code",
+          "source": [
+            "ZONING_BASE",
+            "ZONING_ZTYPE"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "zoning-overlay:{OBJECTID}"
+        }
+      ]
+    },
+    {
+      "connector_key": "elp_el_paso_arcgis_zoning_live",
+      "source_id": "IF-048",
+      "metro_id": "ELP",
+      "interface_name": "if-048-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "zoning",
+      "inventory_if_codes": [
+        "IF-048"
+      ],
+      "priority": 10,
+      "description": "City of El Paso zoning polygons expanded onto canonical ELP parcel representative points.",
+      "preprocess_strategy": "zoning_overlay_to_parcels",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 30
+      },
+      "row_filters": [
+        {
+          "source": "__geometry__",
+          "operator": "exists"
+        }
+      ],
+      "request": {
+        "endpoint_url": "https://gis.elpasotexas.gov/dev/rest/services/planning/Zoning/MapServer/0",
+        "timeout_seconds": 90.0,
+        "query_params": {
+          "where": "OBJECTID > 0",
+          "outFields": "OBJECTID,ZONE_,LABEL,ZONELABEL",
+          "returnGeometry": "true",
+          "f": "geojson",
+          "outSR": "4326"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 7000,
+          "parallel_requests": 6,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "field_rules": [
+        {
+          "target": "zoning_code",
+          "source": [
+            "ZONELABEL",
+            "LABEL",
+            "ZONE_"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "land_use_code",
+          "source": [
+            "LABEL",
+            "ZONELABEL",
+            "ZONE_"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "zoning-overlay:{OBJECTID}"
+        }
+      ]
+    },
+    {
+      "connector_key": "mfe_mcallen_arcgis_zoning_live",
+      "source_id": "IF-050",
+      "metro_id": "MFE",
+      "interface_name": "if-050-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "zoning",
+      "inventory_if_codes": [
+        "IF-050"
+      ],
+      "priority": 10,
+      "description": "City of McAllen zoning polygons expanded onto canonical MFE parcel representative points.",
+      "preprocess_strategy": "zoning_overlay_to_parcels",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 20
+      },
+      "row_filters": [
+        {
+          "source": "__geometry__",
+          "operator": "exists"
+        }
+      ],
+      "request": {
+        "endpoint_url": "https://gismap.mcallen.net/publication/rest/services/DevelopmentZoning/MapServer/1",
+        "timeout_seconds": 90.0,
+        "query_params": {
+          "where": "OBJECTID > 0",
+          "outFields": "OBJECTID,ZONE,ZONEDESCRIPTION",
+          "returnGeometry": "true",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "parallel_requests": 6,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "field_rules": [
+        {
+          "target": "zoning_code",
+          "source": "ZONE",
+          "transform": "strip"
+        },
+        {
+          "target": "land_use_code",
+          "source": [
+            "ZONEDESCRIPTION",
+            "ZONE"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "zoning-overlay:{OBJECTID}"
+        }
+      ]
+    },
+    {
+      "connector_key": "crp_corpus_christi_arcgis_zoning_live",
+      "source_id": "IF-051",
+      "metro_id": "CRP",
+      "interface_name": "if-051-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "zoning",
+      "inventory_if_codes": [
+        "IF-051"
+      ],
+      "priority": 10,
+      "description": "City of Corpus Christi zoning polygons expanded onto canonical CRP parcel representative points.",
+      "preprocess_strategy": "zoning_overlay_to_parcels",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 20
+      },
+      "row_filters": [
+        {
+          "source": "__geometry__",
+          "operator": "exists"
+        }
+      ],
+      "request": {
+        "endpoint_url": "https://ccpublicgis.cctexas.com/server01/rest/services/CC_GENERAL_SERVICES/CC_GENERAL_SERVICES/MapServer/4",
+        "timeout_seconds": 90.0,
+        "query_params": {
+          "where": "OBJECTID > 0",
+          "outFields": "OBJECTID,ORDINANCE_NUMBER,ORDINANCE_DATE,OVERLAY,TAG,TAG2023",
+          "returnGeometry": "true",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "field_rules": [
+        {
+          "target": "zoning_code",
+          "source": [
+            "TAG2023",
+            "TAG"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "land_use_code",
+          "source": [
+            "OVERLAY",
+            "TAG2023",
+            "TAG"
+          ],
+          "transform": "strip"
+        },
+        {
+          "target": "geometry_wkt",
+          "source": "__geometry__",
+          "transform": "geojson_to_wkt"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "zoning-overlay:{OBJECTID}"
+        }
+      ]
+    },
+    {
+      "connector_key": "tx_myelisting_complete_live",
+      "source_id": "LISTING",
+      "metro_id": "TX",
+      "interface_name": "listing-myelisting-html-v1",
+      "adapter_type": "myelisting_html",
+      "enabled": true,
+      "load_strategy": "market_listing",
+      "priority": 5,
+      "description": "Live MyEListing Texas commercial sale and lease listings ingested into market_listing storage for client-facing prospect discovery.",
+      "fetch_policy": {
+        "max_attempts": 2,
+        "backoff_seconds": 5.0,
+        "rate_limit_per_minute": 360
+      },
+      "preprocess_options": {
+        "listing_source_id": "myelisting",
+        "replace_existing_scope": "listing_source_metro"
+      },
+      "request": {
+        "endpoint_url": "https://myelisting.com/sitemap.xml",
+        "record_pattern": "-tx(?:-|/)",
+        "start_urls": [
+          "https://myelisting.com/sitemap.xml"
+        ],
+        "timeout_seconds": 20.0,
+        "text_encoding": "utf-8",
+        "headers": {
+          "User-Agent": "DenseDataCenterLocator/1.0 (+public market listing ingestion)",
+          "Accept": "text/html,application/xhtml+xml"
+        },
+        "pagination": {
+          "strategy": "none",
+          "parallel_requests": 18
+        }
+      },
+      "field_rules": [
+        {
+          "target": "source_listing_key",
+          "source": "source_listing_key",
+          "transform": "strip"
+        },
+        {
+          "target": "listing_title",
+          "source": "listing_title",
+          "transform": "strip"
+        },
+        {
+          "target": "listing_status",
+          "source": "listing_status",
+          "transform": "strip"
+        },
+        {
+          "target": "asset_type",
+          "source": "asset_type",
+          "transform": "strip"
+        },
+        {
+          "target": "asking_price",
+          "source": "asking_price",
+          "transform": "strip"
+        },
+        {
+          "target": "acreage",
+          "source": "acreage",
+          "transform": "strip"
+        },
+        {
+          "target": "building_sqft",
+          "source": "building_sqft",
+          "transform": "strip"
+        },
+        {
+          "target": "address_line1",
+          "source": "address_line1",
+          "transform": "strip"
+        },
+        {
+          "target": "city",
+          "source": "city",
+          "transform": "strip"
+        },
+        {
+          "target": "state_code",
+          "source": "state_code",
+          "transform": "upper"
+        },
+        {
+          "target": "postal_code",
+          "source": "postal_code",
+          "transform": "strip"
+        },
+        {
+          "target": "latitude",
+          "source": "latitude",
+          "transform": "strip"
+        },
+        {
+          "target": "longitude",
+          "source": "longitude",
+          "transform": "strip"
+        },
+        {
+          "target": "broker_name",
+          "source": "broker_name",
+          "transform": "strip"
+        },
+        {
+          "target": "source_url",
+          "source": "source_url",
+          "transform": "strip"
+        },
+        {
+          "target": "last_verified_at",
+          "source": "listing_refreshed",
+          "transform": "strip"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "listing:myelisting:{source_listing_key}"
+        }
+      ]
+    },
+    {
+      "connector_key": "tx_acrevalue_land_live",
+      "source_id": "LISTING",
+      "metro_id": "TX",
+      "interface_name": "listing-acrevalue-land-v1",
+      "adapter_type": "acrevalue_land_listings",
+      "enabled": true,
+      "load_strategy": "market_listing",
+      "priority": 6,
+      "description": "Live AcreValue Texas for-sale land listings ingested into market_listing storage for client-facing prospect discovery.",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 5.0,
+        "rate_limit_per_minute": 420
+      },
+      "preprocess_options": {
+        "listing_source_id": "acrevalue",
+        "replace_existing_scope": "listing_source_metro"
+      },
+      "request": {
+        "endpoint_url": "https://www.acrevalue.com/listings/api/listings/",
+        "query_params": {
+          "sorting_key": "-ordering_date",
+          "status": "For Sale",
+          "filters": "{\"state\":\"TX\"}"
+        },
+        "timeout_seconds": 45.0,
+        "text_encoding": "utf-8",
+        "headers": {
+          "User-Agent": "DenseDataCenterLocator/1.0 (+public market listing ingestion)",
+          "Accept": "application/json"
+        },
+        "pagination": {
+          "strategy": "page_number",
+          "page_size": 500,
+          "parallel_requests": 8
+        }
+      },
+      "field_map": {
+        "source_listing_key": "source_listing_key",
+        "listing_title": "listing_title",
+        "listing_status": "listing_status",
+        "asset_type": "asset_type",
+        "asking_price": "asking_price",
+        "acreage": "acreage",
+        "building_sqft": "building_sqft",
+        "address_line1": "address_line1",
+        "city": "city",
+        "state_code": "state_code",
+        "postal_code": "postal_code",
+        "latitude": "latitude",
+        "longitude": "longitude",
+        "broker_name": "broker_name",
+        "source_url": "source_url",
+        "last_verified_at": "last_verified_at",
+        "lineage_key": "lineage_key"
+      }
+    },
+    {
+      "connector_key": "tx_myelisting_lease_live",
+      "source_id": "LISTING",
+      "metro_id": "TX",
+      "interface_name": "listing-myelisting-html-v1",
+      "adapter_type": "myelisting_html",
+      "enabled": false,
+      "load_strategy": "market_listing",
+      "priority": 7,
+      "description": "Live MyEListing Texas for-lease commercial listings ingested into market_listing storage for client-facing prospect discovery.",
+      "fetch_policy": {
+        "max_attempts": 2,
+        "backoff_seconds": 5.0,
+        "rate_limit_per_minute": 360
+      },
+      "preprocess_options": {
+        "listing_source_id": "myelisting_lease",
+        "replace_existing_scope": "listing_source_metro"
+      },
+      "request": {
+        "endpoint_url": "https://myelisting.com/properties/for-lease/texas/all-property-types/",
+        "start_urls": [
+          "https://myelisting.com/properties/for-lease/texas/all-property-types/"
+        ],
+        "timeout_seconds": 20.0,
+        "text_encoding": "utf-8",
+        "headers": {
+          "User-Agent": "DenseDataCenterLocator/1.0 (+public market listing ingestion)",
+          "Accept": "text/html,application/xhtml+xml"
+        },
+        "pagination": {
+          "strategy": "none",
+          "parallel_requests": 6
+        }
+      },
+      "field_rules": [
+        {
+          "target": "source_listing_key",
+          "source": "source_listing_key",
+          "transform": "strip"
+        },
+        {
+          "target": "listing_title",
+          "source": "listing_title",
+          "transform": "strip"
+        },
+        {
+          "target": "listing_status",
+          "source": "listing_status",
+          "transform": "strip"
+        },
+        {
+          "target": "asset_type",
+          "source": "asset_type",
+          "transform": "strip"
+        },
+        {
+          "target": "asking_price",
+          "source": "asking_price",
+          "transform": "strip"
+        },
+        {
+          "target": "acreage",
+          "source": "acreage",
+          "transform": "strip"
+        },
+        {
+          "target": "building_sqft",
+          "source": "building_sqft",
+          "transform": "strip"
+        },
+        {
+          "target": "address_line1",
+          "source": "address_line1",
+          "transform": "strip"
+        },
+        {
+          "target": "city",
+          "source": "city",
+          "transform": "strip"
+        },
+        {
+          "target": "state_code",
+          "source": "state_code",
+          "transform": "upper"
+        },
+        {
+          "target": "postal_code",
+          "source": "postal_code",
+          "transform": "strip"
+        },
+        {
+          "target": "latitude",
+          "source": "latitude",
+          "transform": "strip"
+        },
+        {
+          "target": "longitude",
+          "source": "longitude",
+          "transform": "strip"
+        },
+        {
+          "target": "broker_name",
+          "source": "broker_name",
+          "transform": "strip"
+        },
+        {
+          "target": "source_url",
+          "source": "source_url",
+          "transform": "strip"
+        },
+        {
+          "target": "last_verified_at",
+          "source": "listing_refreshed",
+          "transform": "strip"
+        },
+        {
+          "target": "lineage_key",
+          "transform": "template",
+          "template": "listing:myelisting_lease:{source_listing_key}"
+        }
+      ]
+    },
+    {
+      "connector_key": "tx_peeringdb_facilities_live",
+      "source_id": "IF-009",
+      "metro_id": "TX",
+      "interface_name": "if-009-http-json-v1",
+      "adapter_type": "http_json",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-009"
+      ],
+      "priority": 10,
+      "description": "Live PeeringDB Texas facility ingest for interconnection and carrier-density evidence.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 20,
+        "checkpoint_field": "updated"
+      },
+      "request": {
+        "endpoint_url": "https://www.peeringdb.com/api/fac",
+        "timeout_seconds": 45.0,
+        "query_params": {
+          "country": "US",
+          "state": "TX"
+        },
+        "record_path": [
+          "data"
+        ]
+      },
+      "preprocess_options": {
+        "record_key_template": "peeringdb:fac:{id}",
+        "lineage_key_template": "if009:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "facility_name",
+            "source": "name",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "org_name",
+            "source": "org_name",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "city",
+            "source": "city",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "state",
+            "source": "state",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "website",
+            "source": "website",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "latitude",
+            "source": "latitude",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "longitude",
+            "source": "longitude",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "net_count",
+            "source": "net_count",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "ix_count",
+            "source": "ix_count",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "carrier_count",
+            "source": "carrier_count",
+            "transform": "stringify"
+          }
+        ]
+      }
+    },
+      {
+        "connector_key": "tx_usgs_nwis_iv_live",
+        "source_id": "IF-021",
+        "metro_id": "TX",
+      "interface_name": "if-021-http-json-v1",
+      "adapter_type": "http_json",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-021"
+      ],
+      "priority": 20,
+      "description": "Live USGS NWIS instantaneous water-service ingest for Texas hydrology evidence.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 10,
+        "checkpoint_field": "values.0.value.0.dateTime"
+      },
+      "request": {
+        "endpoint_url": "https://waterservices.usgs.gov/nwis/iv/",
+        "timeout_seconds": 90.0,
+        "query_params": {
+          "format": "json",
+          "stateCd": "TX",
+          "parameterCd": "00060,00065",
+          "siteStatus": "all"
+        },
+        "record_path": [
+          "value",
+          "timeSeries"
+        ]
+      },
+      "preprocess_options": {
+        "record_key_template": "{name}",
+        "lineage_key_template": "if021:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "site_name",
+            "source": "sourceInfo.siteName",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "site_code",
+            "source": "sourceInfo.siteCode.0.value",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "variable_code",
+            "source": "variable.variableCode.0.value",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "variable_name",
+            "source": "variable.variableName",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "unit_code",
+            "source": "variable.unit.unitCode",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "latitude",
+            "source": "sourceInfo.geoLocation.geogLocation.latitude",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "longitude",
+            "source": "sourceInfo.geoLocation.geogLocation.longitude",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "latest_value",
+            "source": "values.0.value.0.value",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "latest_value_timestamp",
+            "source": "values.0.value.0.dateTime",
+            "transform": "strip"
+          }
+          ]
+        }
+      },
+      {
+        "connector_key": "tx_usgs_designmaps_grid_live",
+        "source_id": "IF-022",
+        "metro_id": "TX",
+        "interface_name": "if-022-usgs-designmaps-grid-v1",
+        "adapter_type": "usgs_designmaps_grid",
+        "enabled": true,
+        "load_strategy": "evidence",
+        "inventory_if_codes": [
+          "IF-022"
+        ],
+        "priority": 21,
+        "description": "Live USGS design-maps seismic surface ingest sampled across the Texas state boundary grid.",
+        "preprocess_strategy": "expand_evidence_attributes",
+        "fetch_policy": {
+          "max_attempts": 3,
+          "backoff_seconds": 1.0,
+          "rate_limit_per_minute": 240
+        },
+        "request": {
+          "endpoint_url": "https://earthquake.usgs.gov/ws/designmaps/asce7-22.json",
+          "timeout_seconds": 45.0,
+          "query_params": {
+            "riskCategory": "III",
+            "siteClass": "D"
+          }
+        },
+        "preprocess_options": {
+          "boundary_geojson_path": "configs/boundaries/tx_state_boundary.geojson",
+          "grid_step_degrees": 0.5,
+          "parallel_requests": 8,
+          "replace_existing_scope": "source_metro",
+          "record_key_template": "usgs-designmap:{point_id}",
+          "lineage_key_template": "if022:{record_key}:{attribute_name}",
+          "attribute_fields": [
+            {
+              "attribute_name": "reference_document",
+              "source": "reference_document",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "risk_category",
+              "source": "risk_category",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "site_class",
+              "source": "site_class",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "latitude",
+              "source": "latitude",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "longitude",
+              "source": "longitude",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "pgam",
+              "source": "pgam",
+              "transform": "stringify"
+            },
+            {
+              "attribute_name": "ss",
+              "source": "ss",
+              "transform": "stringify"
+            },
+            {
+              "attribute_name": "s1",
+              "source": "s1",
+              "transform": "stringify"
+            },
+            {
+              "attribute_name": "sms",
+              "source": "sms",
+              "transform": "stringify"
+            },
+            {
+              "attribute_name": "sm1",
+              "source": "sm1",
+              "transform": "stringify"
+            },
+            {
+              "attribute_name": "sds",
+              "source": "sds",
+              "transform": "stringify"
+            },
+            {
+              "attribute_name": "sd1",
+              "source": "sd1",
+              "transform": "stringify"
+            },
+            {
+              "attribute_name": "sdc",
+              "source": "sdc",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "ts",
+              "source": "ts",
+              "transform": "stringify"
+            },
+            {
+              "attribute_name": "t0",
+              "source": "t0",
+              "transform": "stringify"
+            },
+            {
+              "attribute_name": "tl",
+              "source": "tl",
+              "transform": "stringify"
+            }
+          ]
+        }
+      },
+      {
+        "connector_key": "tx_bls_qcew_employment_live",
+        "source_id": "IF-012",
+        "metro_id": "TX",
+      "interface_name": "if-012-http-csv-v1",
+      "adapter_type": "http_csv",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-012"
+      ],
+      "priority": 18,
+      "description": "Live BLS QCEW county-level Texas employment ingest from the official open-data CSV slices.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 6
+      },
+      "request": {
+        "endpoint_url": "https://data.bls.gov/cew/data/api/2025/3/industry/10.csv",
+        "timeout_seconds": 120.0,
+        "csv_delimiter": ",",
+        "csv_encoding": "utf-8"
+      },
+      "row_filters": [
+        {
+          "source": "area_fips",
+          "operator": "startswith",
+          "value": "48"
+        },
+        {
+          "source": "agglvl_code",
+          "operator": "equals",
+          "value": "70"
+        },
+        {
+          "source": "own_code",
+          "operator": "equals",
+          "value": "0"
+        },
+        {
+          "source": "industry_code",
+          "operator": "equals",
+          "value": "10"
+        },
+        {
+          "source": "size_code",
+          "operator": "equals",
+          "value": "0"
+        }
+      ],
+      "preprocess_options": {
+        "record_key_template": "bls-qcew:{area_fips}:{year}Q{qtr}",
+        "lineage_key_template": "if012:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "county_fips",
+            "source": "area_fips",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "year",
+            "source": "year",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "quarter",
+            "source": "qtr",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "quarterly_establishments",
+            "source": "qtrly_estabs",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "month1_employment_level",
+            "source": "month1_emplvl",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "month2_employment_level",
+            "source": "month2_emplvl",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "month3_employment_level",
+            "source": "month3_emplvl",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "total_quarterly_wages",
+            "source": "total_qtrly_wages",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "average_weekly_wage",
+            "source": "avg_wkly_wage",
+            "transform": "strip"
+          }
+          ]
+        }
+      },
+      {
+        "connector_key": "tx_ercot_dam_spp_live",
+        "source_id": "IF-013",
+        "metro_id": "TX",
+        "interface_name": "if-013-ercot-dam-spp-html-v1",
+        "adapter_type": "ercot_dam_spp_html",
+        "enabled": true,
+        "load_strategy": "evidence",
+        "inventory_if_codes": [
+          "IF-013"
+        ],
+        "priority": 19,
+        "description": "Live ERCOT public DAM settlement-point price ingest from the posted market report pages.",
+        "preprocess_strategy": "expand_evidence_attributes",
+        "fetch_policy": {
+          "max_attempts": 3,
+          "backoff_seconds": 1.0,
+          "rate_limit_per_minute": 12
+        },
+        "request": {
+          "endpoint_url": "https://www.ercot.com/content/cdr/html/dam_spp",
+          "timeout_seconds": 45.0,
+          "text_encoding": "utf-8",
+          "headers": {
+            "User-Agent": "DenseDataCenterLocator/1.0 (+public ERCOT market ingestion)",
+            "Accept": "text/html,application/xhtml+xml"
+          }
+        },
+        "preprocess_options": {
+          "fallback_days": 1,
+          "replace_existing_scope": "source_metro",
+          "record_key_template": "ercot:dam_spp:{Oper Day}:{Hour Ending}",
+          "lineage_key_template": "if013:{record_key}:{attribute_name}",
+          "attribute_fields": [
+            {
+              "attribute_name": "operating_day",
+              "source": "Oper Day",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "hour_ending",
+              "source": "Hour Ending",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "hb_busavg",
+              "source": "HB_BUSAVG",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "hb_houston",
+              "source": "HB_HOUSTON",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "hb_hubavg",
+              "source": "HB_HUBAVG",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "hb_north",
+              "source": "HB_NORTH",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "hb_pan",
+              "source": "HB_PAN",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "hb_south",
+              "source": "HB_SOUTH",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "hb_west",
+              "source": "HB_WEST",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "lz_aen",
+              "source": "LZ_AEN",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "lz_cps",
+              "source": "LZ_CPS",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "lz_houston",
+              "source": "LZ_HOUSTON",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "lz_lcra",
+              "source": "LZ_LCRA",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "lz_north",
+              "source": "LZ_NORTH",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "lz_raybn",
+              "source": "LZ_RAYBN",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "lz_south",
+              "source": "LZ_SOUTH",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "lz_west",
+              "source": "LZ_WEST",
+              "transform": "strip"
+            }
+          ]
+        }
+      },
+      {
+        "connector_key": "tx_ercot_grid_maps_live",
+        "source_id": "IF-014",
+        "metro_id": "TX",
+        "interface_name": "if-014-http-html-v1",
+        "adapter_type": "http_html",
+        "enabled": true,
+        "load_strategy": "evidence",
+        "inventory_if_codes": [
+          "IF-014"
+        ],
+        "priority": 20,
+        "description": "Live ERCOT public grid map metadata ingest from the official ERCOT media kit maps page.",
+        "preprocess_strategy": "expand_evidence_attributes",
+        "fetch_policy": {
+          "max_attempts": 3,
+          "backoff_seconds": 1.0,
+          "rate_limit_per_minute": 6
+        },
+        "request": {
+          "endpoint_url": "https://www.ercot.com/news/mediakit/maps/index",
+          "timeout_seconds": 45.0,
+          "text_encoding": "utf-8",
+          "headers": {
+            "User-Agent": "DenseDataCenterLocator/1.0 (+public ERCOT map ingestion)",
+            "Accept": "text/html,application/xhtml+xml"
+          },
+          "record_pattern": "<img[^>]+src=\\\"(?P<image_url>https://www\\.ercot\\.com/files/assets/[^\\\"]+)\\\"[^>]*>\\s*</p>\\s*<p[^>]*>\\s*<em>(?P<title>[^<]+)</em>\\s*</p>.*?<form[^>]+action=\\\"(?P<download_path>/files/assets/[^\\\"]+)\\\""
+        },
+        "preprocess_options": {
+          "replace_existing_scope": "source_metro",
+          "record_key_template": "ercot-grid-map:{title}",
+          "lineage_key_template": "if014:{record_key}:{attribute_name}",
+          "attribute_fields": [
+            {
+              "attribute_name": "map_title",
+              "source": "title",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "download_url",
+              "transform": "template",
+              "template": "https://www.ercot.com{download_path}"
+            },
+            {
+              "attribute_name": "preview_image_url",
+              "source": "image_url",
+              "transform": "strip"
+            }
+          ]
+        }
+      },
+      {
+        "connector_key": "tx_ercot_lli_queue_docs_live",
+        "source_id": "IF-015",
+        "metro_id": "TX",
+        "interface_name": "if-015-http-html-v1",
+        "adapter_type": "http_html",
+        "enabled": true,
+        "load_strategy": "evidence",
+        "inventory_if_codes": [
+          "IF-015"
+        ],
+        "priority": 21,
+        "description": "Live ERCOT large load queue document metadata ingest from the official Large Flexible Load Task Force page.",
+        "preprocess_strategy": "expand_evidence_attributes",
+        "fetch_policy": {
+          "max_attempts": 3,
+          "backoff_seconds": 1.0,
+          "rate_limit_per_minute": 6
+        },
+        "request": {
+          "endpoint_url": "https://www.ercot.com/committees/inactive/lfltf/",
+          "timeout_seconds": 45.0,
+          "text_encoding": "utf-8",
+          "headers": {
+            "User-Agent": "DenseDataCenterLocator/1.0 (+public ERCOT large load ingestion)",
+            "Accept": "text/html,application/xhtml+xml"
+          },
+          "record_pattern": "<a[^>]+href=\\\"(?P<download_url>https://www\\.ercot\\.com/files/docs/[^\\\"]+)\\\"[^>]*title=\\\"(?P<title>[^\\\"]+)\\\"[^>]*>.*?</a>.*?<span class=\\\"\\\">(?P<published_meta>[^<]+)</span>"
+        },
+        "row_filters": [
+          {
+            "source": "title",
+            "operator": "regex",
+            "value": "(queue\\s+status\\s+update|large\\s+load)"
+          }
+        ],
+        "preprocess_options": {
+          "replace_existing_scope": "source_metro",
+          "record_key_template": "ercot-lli-doc:{title}",
+          "lineage_key_template": "if015:{record_key}:{attribute_name}",
+          "attribute_fields": [
+            {
+              "attribute_name": "document_title",
+              "source": "title",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "document_url",
+              "source": "download_url",
+              "transform": "strip"
+            },
+            {
+              "attribute_name": "published_meta",
+              "source": "published_meta",
+              "transform": "strip"
+            }
+          ]
+        }
+      },
+      {
+        "connector_key": "tx_ntia_bead_high_cost_areas_live",
+        "source_id": "IF-027",
+        "metro_id": "TX",
+      "interface_name": "if-027-http-xlsx-v1",
+      "adapter_type": "http_xlsx",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-027"
+      ],
+      "priority": 19,
+      "description": "Live NTIA BEAD high-cost census block group ingest from the official allocation methodology workbook.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 4
+      },
+      "request": {
+        "endpoint_url": "https://broadbandusa.ntia.gov/sites/default/files/2025-06/high-cost_areas.xlsx",
+        "timeout_seconds": 120.0,
+        "headers": {
+          "User-Agent": "Mozilla/5.0"
+        },
+        "xlsx_sheet_name": "High Cost Areas",
+        "xlsx_header_row": 1
+      },
+      "row_filters": [
+        {
+          "source": "State FIPS",
+          "operator": "equals",
+          "value": "48"
+        }
+      ],
+      "preprocess_options": {
+        "record_key_template": "bead-high-cost-cbg:{Census Block Group}",
+        "lineage_key_template": "if027:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "state_fips",
+            "source": "State FIPS",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "state_name",
+            "source": "State Name",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "census_block_group",
+            "source": "Census Block Group",
+            "transform": "strip"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_comptroller_ch312_abatements_live",
+      "source_id": "IF-028",
+      "metro_id": "TX",
+      "interface_name": "if-028-http-csv-v1",
+      "adapter_type": "http_csv",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-028"
+      ],
+      "priority": 20,
+      "description": "Live Texas Comptroller Chapter 312 abatement detail ingest from the published open-data CSV export.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 4
+      },
+      "request": {
+        "endpoint_url": "https://assets.comptroller.texas.gov/open-data-files/ch312-abatement-detail.csv",
+        "timeout_seconds": 120.0,
+        "csv_delimiter": ",",
+        "csv_encoding": "utf-8",
+        "headers": {
+          "User-Agent": "Mozilla/5.0"
+        }
+      },
+      "preprocess_options": {
+        "replace_existing_scope": "source_metro",
+        "record_key_template": "ch312-abatement:{Record ID}:{Taxing Unit Name}:{Taxing Unit Type}:{Property Type Abated }:{Property Account Number}",
+        "lineage_key_template": "if028:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "lead_taxing_unit_name",
+            "source": "Lead Taxing Unit Name",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "reinvestment_zone_name",
+            "source": "Reinvestment Zone Name",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "cad_name",
+            "source": "CAD Name (Reporting Entity)",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "abatement_status",
+            "source": "Abatement Status",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "taxing_unit_name",
+            "source": "Taxing Unit Name",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "taxing_unit_type",
+            "source": "Taxing Unit Type",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "property_owner_name",
+            "source": "Property Owner Name",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "business_activity",
+            "source": "Business Activity",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "business_type",
+            "source": "Business Type",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "property_type_abated",
+            "source": "Property Type Abated ",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "property_account_number",
+            "source": "Property Account Number",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "executed_agreement_date",
+            "source": "Executed/Signed Date of Agreement",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "effective_agreement_date",
+            "source": "Effective Date of Agreement",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "expiration_agreement_date",
+            "source": "Expiration Date of Agreement",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "base_value_abated_property",
+            "source": "Base Value of Abated Property",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "total_value_incentives",
+            "source": "Total Value of Incentives",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "dollar_amount_given_to_business",
+            "source": "Dollar Amount Given to Business",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "submission_date",
+            "source": "Submission Date",
+            "transform": "strip"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_hifld_substations_live",
+      "source_id": "IF-001",
+      "metro_id": "TX",
+      "interface_name": "if-001-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-001"
+      ],
+      "priority": 25,
+      "description": "Live HIFLD electric substations ingest scoped to Texas records from the published HIFLD ArcGIS layer.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 20
+      },
+      "request": {
+        "endpoint_url": "https://services1.arcgis.com/BSnEnFfEn54YLVeq/arcgis/rest/services/HIFLD_Electric_Substations/FeatureServer/5",
+        "timeout_seconds": 90.0,
+        "query_params": {
+          "where": "STATE='TX'",
+          "outFields": "ID,NAME,CITY,STATE,COUNTY,COUNTYFIPS,STATUS,TYPE,ZIP,LATITUDE,LONGITUDE,MAX_VOLT,MIN_VOLT,NAICS_CODE,NAICS_DESC,SOURCE,SOURCEDATE,VAL_METHOD,VAL_DATE",
+          "returnGeometry": "false",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 1000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "record_key_template": "substation:{ID}",
+        "lineage_key_template": "if001:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "facility_name",
+            "source": "NAME",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "city",
+            "source": "CITY",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "state",
+            "source": "STATE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "county",
+            "source": "COUNTY",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "facility_type",
+            "source": "TYPE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "status",
+            "source": "STATUS",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "zip_code",
+            "source": "ZIP",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "latitude",
+            "source": "LATITUDE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "longitude",
+            "source": "LONGITUDE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "max_voltage_kv",
+            "source": "MAX_VOLT",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "min_voltage_kv",
+            "source": "MIN_VOLT",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "naics_code",
+            "source": "NAICS_CODE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "naics_desc",
+            "source": "NAICS_DESC",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "source",
+            "source": "SOURCE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "source_date",
+            "source": "SOURCEDATE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "validation_method",
+            "source": "VAL_METHOD",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "validation_date",
+            "source": "VAL_DATE",
+            "transform": "stringify"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_hifld_transmission_lines_live",
+      "source_id": "IF-002",
+      "metro_id": "TX",
+      "interface_name": "if-002-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-002"
+      ],
+      "priority": 26,
+      "description": "Live HIFLD transmission line ingest intersecting the Texas statewide envelope.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 12
+      },
+      "request": {
+        "endpoint_url": "https://services3.arcgis.com/fwwoCWVtaahwlvxO/arcgis/rest/services/HIFLD_US_Transmission_Lines_with_ICF/FeatureServer/0",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "1=1",
+          "geometry": "-106.65,25.84,-93.51,36.50",
+          "geometryType": "esriGeometryEnvelope",
+          "inSR": "4326",
+          "spatialRel": "esriSpatialRelIntersects",
+          "outFields": "ID,TYPE,STATUS,OWNER,VOLTAGE,VOLT_CLASS,INFERRED,SUB_1,SUB_2,MOD_SUB_1,MOD_SUB_2,NAICS_CODE,NAICS_DESC,SOURCE,SOURCEDATE,VAL_METHOD,VAL_DATE,Transmissi",
+          "returnGeometry": "false",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 1000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "record_key_template": "transmission-line:{ID}",
+        "lineage_key_template": "if002:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "line_type",
+            "source": "TYPE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "status",
+            "source": "STATUS",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "owner",
+            "source": "OWNER",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "voltage",
+            "source": "VOLTAGE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "voltage_class",
+            "source": "VOLT_CLASS",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "inferred",
+            "source": "INFERRED",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "substation_a",
+            "source": [
+              "MOD_SUB_1",
+              "SUB_1"
+            ],
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "substation_b",
+            "source": [
+              "MOD_SUB_2",
+              "SUB_2"
+            ],
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "line_name",
+            "source": "Transmissi",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "naics_code",
+            "source": "NAICS_CODE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "naics_desc",
+            "source": "NAICS_DESC",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "source",
+            "source": "SOURCE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "source_date",
+            "source": "SOURCEDATE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "validation_method",
+            "source": "VAL_METHOD",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "validation_date",
+            "source": "VAL_DATE",
+            "transform": "stringify"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_hifld_service_territories_live",
+      "source_id": "IF-005",
+      "metro_id": "TX",
+      "interface_name": "if-005-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-005"
+      ],
+      "priority": 27,
+      "description": "Live HIFLD electric retail service territory ingest for Texas utilities.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 12
+      },
+      "request": {
+        "endpoint_url": "https://services3.arcgis.com/OYP7N6mAJJCyH6hd/arcgis/rest/services/Electric_Retail_Service_Territories_HIFLD/FeatureServer/0",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "STATE='TX'",
+          "outFields": "ID,NAME,ADDRESS,CITY,STATE,ZIP,TELEPHONE,TYPE,COUNTRY,NAICS_CODE,NAICS_DESC,SOURCE,SOURCEDATE,VAL_METHOD,VAL_DATE,WEBSITE,REGULATED,CNTRL_AREA,PLAN_AREA,HOLDING_CO,SUMMR_PEAK,WINTR_PEAK,CUSTOMERS,YEAR",
+          "returnGeometry": "false",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 1000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "record_key_template": "service-territory:{ID}",
+        "lineage_key_template": "if005:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "utility_name",
+            "source": "NAME",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "city",
+            "source": "CITY",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "state",
+            "source": "STATE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "zip_code",
+            "source": "ZIP",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "utility_type",
+            "source": "TYPE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "telephone",
+            "source": "TELEPHONE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "website",
+            "source": "WEBSITE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "regulated",
+            "source": "REGULATED",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "control_area",
+            "source": "CNTRL_AREA",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "planning_area",
+            "source": "PLAN_AREA",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "holding_company",
+            "source": "HOLDING_CO",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "summer_peak_mw",
+            "source": "SUMMR_PEAK",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "winter_peak_mw",
+            "source": "WINTR_PEAK",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "customers",
+            "source": "CUSTOMERS",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "report_year",
+            "source": "YEAR",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "naics_code",
+            "source": "NAICS_CODE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "naics_desc",
+            "source": "NAICS_DESC",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "source",
+            "source": "SOURCE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "source_date",
+            "source": "SOURCEDATE",
+            "transform": "stringify"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_hifld_gas_pipelines_live",
+      "source_id": "IF-003",
+      "metro_id": "TX",
+      "interface_name": "if-003-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-003"
+      ],
+      "priority": 28,
+      "description": "Live Texas natural gas pipeline ingest using the DOE NETL ArcGIS service that republishes the HIFLD pipeline layer.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 12
+      },
+      "request": {
+        "endpoint_url": "https://arcgis.netl.doe.gov/server/rest/services/Hosted/Natural_Gas_Pipelines/FeatureServer/10",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "1=1",
+          "geometry": "-106.65,25.84,-93.51,36.50",
+          "geometryType": "esriGeometryEnvelope",
+          "inSR": "4326",
+          "spatialRel": "esriSpatialRelIntersects",
+          "outFields": "objectid,fid_1,typepipe,operator,shape_leng,shape__len,SHAPE__Length",
+          "returnGeometry": "false",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "record_key_template": "gas-pipeline:{objectid}",
+        "lineage_key_template": "if003:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "facility_id",
+            "source": "fid_1",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "pipeline_type",
+            "source": "typepipe",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "operator",
+            "source": "operator",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "shape_length_degrees",
+            "source": "shape_leng",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "shape_length_meters",
+            "source": "shape__len",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "shape_length_arcgis",
+            "source": "SHAPE__Length",
+            "transform": "stringify"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_hifld_gas_compressors_live",
+      "source_id": "IF-004",
+      "metro_id": "TX",
+      "interface_name": "if-004-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-004"
+      ],
+      "priority": 29,
+      "description": "Live Texas natural gas compressor station ingest using the published ArcGIS service for HIFLD compressor locations.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 12
+      },
+      "request": {
+        "endpoint_url": "https://services5.arcgis.com/HDRa0B57OVrv2E1q/arcgis/rest/services/Natural_Gas_Compressor_Stations/FeatureServer/0",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "1=1",
+          "geometry": "-106.65,25.84,-93.51,36.50",
+          "geometryType": "esriGeometryEnvelope",
+          "inSR": "4326",
+          "spatialRel": "esriSpatialRelIntersects",
+          "outFields": "OBJECTID_1,GCOMPID,NAME,ADDRESS,CITY,STATE,ZIP,TYPE,STATUS,COUNTY,LATITUDE,LONGITUDE,NAICS_CODE,NAICS_DESC,SOURCE,SOURCEDATE,VAL_METHOD,VAL_DATE,WEBSITE,PIPECO,COMPID,OPERATOR,NUM_UNITS,CERT_HP",
+          "returnGeometry": "false",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 1000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "record_key_template": "gas-compressor:{OBJECTID_1}",
+        "lineage_key_template": "if004:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "facility_id",
+            "source": "GCOMPID",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "facility_name",
+            "source": "NAME",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "city",
+            "source": "CITY",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "state",
+            "source": "STATE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "county",
+            "source": "COUNTY",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "zip_code",
+            "source": "ZIP",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "facility_type",
+            "source": "TYPE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "status",
+            "source": "STATUS",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "latitude",
+            "source": "LATITUDE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "longitude",
+            "source": "LONGITUDE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "operator",
+            "source": "OPERATOR",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "pipeline_company",
+            "source": "PIPECO",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "num_units",
+            "source": "NUM_UNITS",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "certified_horsepower",
+            "source": "CERT_HP",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "website",
+            "source": "WEBSITE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "naics_code",
+            "source": "NAICS_CODE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "naics_desc",
+            "source": "NAICS_DESC",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "source",
+            "source": "SOURCE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "source_date",
+            "source": "SOURCEDATE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "validation_method",
+            "source": "VAL_METHOD",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "validation_date",
+            "source": "VAL_DATE",
+            "transform": "stringify"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_census_acs_live",
+      "source_id": "IF-010",
+      "metro_id": "TX",
+      "interface_name": "if-010-http-json-v1",
+      "adapter_type": "http_json",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-010"
+      ],
+      "priority": 30,
+      "description": "Live Texas ACS 5-year tract demographics ingest from the official Census API.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 12
+      },
+      "request": {
+        "endpoint_url": "https://api.census.gov/data/2023/acs/acs5",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "get": "NAME,B01001_001E,B19013_001E,B25077_001E,B25064_001E",
+          "for": "tract:*",
+          "in": "state:48 county:*"
+        }
+      },
+      "preprocess_options": {
+        "replace_existing_scope": "source_metro",
+        "record_key_template": "census-tract:{state}{county}{tract}",
+        "lineage_key_template": "if010:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "tract_geoid",
+            "transform": "template",
+            "template": "{state}{county}{tract}"
+          },
+          {
+            "attribute_name": "tract_name",
+            "source": "NAME",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "state_fips",
+            "source": "state",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "county_code",
+            "source": "county",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "tract_code",
+            "source": "tract",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "total_population",
+            "source": "B01001_001E",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "median_household_income",
+            "source": "B19013_001E",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "median_home_value",
+            "source": "B25077_001E",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "median_gross_rent",
+            "source": "B25064_001E",
+            "transform": "strip"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_census_tracts_live",
+      "source_id": "IF-011",
+      "metro_id": "TX",
+      "interface_name": "if-011-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-011"
+      ],
+      "priority": 31,
+      "description": "Live Texas Census 2020 tract ingest from TIGERweb for statewide demographic and tract boundary reference evidence.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 12
+      },
+      "request": {
+        "endpoint_url": "https://tigerweb.geo.census.gov/arcgis/rest/services/Census2020/Tracts_Blocks/MapServer/0",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "STATE='48'",
+          "outFields": "GEOID,STATE,COUNTY,TRACT,BASENAME,NAME,LSADC,FUNCSTAT,POP100,HU100,AREALAND,AREAWATER,UR,CENTLAT,CENTLON,INTPTLAT,INTPTLON",
+          "returnGeometry": "false",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 5000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "record_key_template": "census-tract:{GEOID}",
+        "lineage_key_template": "if011:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "geoid",
+            "source": "GEOID",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "state_fips",
+            "source": "STATE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "county_code",
+            "source": "COUNTY",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "tract_code",
+            "source": "TRACT",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "basename",
+            "source": "BASENAME",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "tract_name",
+            "source": "NAME",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "legal_statistical_area",
+            "source": "LSADC",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "functional_status",
+            "source": "FUNCSTAT",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "population_2020",
+            "source": "POP100",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "housing_units_2020",
+            "source": "HU100",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "land_area_sq_m",
+            "source": "AREALAND",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "water_area_sq_m",
+            "source": "AREAWATER",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "urban_rural",
+            "source": "UR",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "centroid_latitude",
+            "source": "CENTLAT",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "centroid_longitude",
+            "source": "CENTLON",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "interior_point_latitude",
+            "source": "INTPTLAT",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "interior_point_longitude",
+            "source": "INTPTLON",
+            "transform": "strip"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_epa_superfund_sites_live",
+      "source_id": "IF-023",
+      "metro_id": "TX",
+      "interface_name": "if-023-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-023"
+      ],
+      "priority": 32,
+      "description": "Live Texas EPA Superfund boundary ingest from the EPA public ArcGIS service.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 12
+      },
+      "request": {
+        "endpoint_url": "https://services.arcgis.com/cJ9YHowT8TU7DUyn/arcgis/rest/services/FAC_Superfund_Site_Boundaries_EPA_Public/FeatureServer/0",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "STATE_CODE='TX'",
+          "outFields": "OBJECTID,REGION_CODE,EPA_PROGRAM,EPA_ID,SITE_NAME,SITE_FEATURE_CLASS,SITE_FEATURE_TYPE,SITE_FEATURE_NAME,NPL_STATUS_CODE,LAST_CHANGE_DATE,CITY_NAME,COUNTY,STATE_CODE,ZIP_CODE,FEATURE_INFO_URL,GIS_AREA,GIS_AREA_UNITS,Shape__Area,Shape__Length",
+          "returnGeometry": "false",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 1000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "record_key_template": "superfund-site:{OBJECTID}",
+        "lineage_key_template": "if023:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "epa_id",
+            "source": "EPA_ID",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "site_name",
+            "source": "SITE_NAME",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "epa_program",
+            "source": "EPA_PROGRAM",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "region_code",
+            "source": "REGION_CODE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "site_feature_class",
+            "source": "SITE_FEATURE_CLASS",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "site_feature_type",
+            "source": "SITE_FEATURE_TYPE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "site_feature_name",
+            "source": "SITE_FEATURE_NAME",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "npl_status_code",
+            "source": "NPL_STATUS_CODE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "last_change_date",
+            "source": "LAST_CHANGE_DATE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "city",
+            "source": "CITY_NAME",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "county",
+            "source": "COUNTY",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "state_code",
+            "source": "STATE_CODE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "zip_code",
+            "source": "ZIP_CODE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "feature_info_url",
+            "source": "FEATURE_INFO_URL",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "gis_area",
+            "source": "GIS_AREA",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "gis_area_units",
+            "source": "GIS_AREA_UNITS",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "shape_area",
+            "source": "Shape__Area",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "shape_length",
+            "source": "Shape__Length",
+            "transform": "stringify"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_usfws_critical_habitat_live",
+      "source_id": "IF-024",
+      "metro_id": "TX",
+      "interface_name": "if-024-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-024"
+      ],
+      "priority": 33,
+      "description": "Live Texas critical habitat ingest using the USFWS ArcGIS feature service clipped to the Texas state boundary.",
+      "preprocess_strategy": "spatial_filter_expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 12
+      },
+      "request": {
+        "endpoint_url": "https://services.arcgis.com/QVENGdaPbd4LUkLV/ArcGIS/rest/services/USFWS_Critical_Habitat/FeatureServer/0",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "1=1",
+          "geometry": "-106.65,25.84,-93.51,36.50",
+          "geometryType": "esriGeometryEnvelope",
+          "inSR": "4326",
+          "spatialRel": "esriSpatialRelIntersects",
+          "outFields": "OBJECTID,comname,sciname,spcode,vipcode,entity_id,unit,subunit,unitname,subunitname,status,listing_status,fedreg,pubdate,effectdate,vacatedate,leadoffice,source_id",
+          "returnGeometry": "true",
+          "f": "geojson"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 1000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "boundary_geojson_path": "configs/boundaries/tx_state_boundary.geojson",
+        "record_key_template": "critical-habitat:{OBJECTID}",
+        "lineage_key_template": "if024:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "common_name",
+            "source": "comname",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "scientific_name",
+            "source": "sciname",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "species_code",
+            "source": "spcode",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "vip_code",
+            "source": "vipcode",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "entity_id",
+            "source": "entity_id",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "unit",
+            "source": "unit",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "subunit",
+            "source": "subunit",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "unit_name",
+            "source": "unitname",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "subunit_name",
+            "source": "subunitname",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "habitat_status",
+            "source": "status",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "listing_status",
+            "source": "listing_status",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "federal_register_reference",
+            "source": "fedreg",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "publication_date",
+            "source": "pubdate",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "effective_date",
+            "source": "effectdate",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "vacate_date",
+            "source": "vacatedate",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "lead_office",
+            "source": "leadoffice",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "source_feature_id",
+            "source": "source_id",
+            "transform": "stringify"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_fema_nfhl_flood_zones_live",
+      "source_id": "IF-006",
+      "metro_id": "TX",
+      "interface_name": "if-006-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-006"
+      ],
+      "priority": 34,
+      "description": "Live Texas FEMA National Flood Hazard Layer ingest filtered to Texas DFIRM panels.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 12
+      },
+      "request": {
+        "endpoint_url": "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28",
+        "timeout_seconds": 180.0,
+        "query_params": {
+          "where": "DFIRM_ID like '48%'",
+          "outFields": "OBJECTID,DFIRM_ID,FLD_AR_ID,STUDY_TYP,FLD_ZONE,ZONE_SUBTY,SFHA_TF,STATIC_BFE,V_DATUM,DEPTH,LEN_UNIT,VELOCITY,VEL_UNIT,AR_REVERT,AR_SUBTRV,BFE_REVERT,DEP_REVERT,DUAL_ZONE,SOURCE_CIT,GFID",
+          "returnGeometry": "false",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "record_key_template": "flood-zone:{OBJECTID}",
+        "lineage_key_template": "if006:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "dfirm_id",
+            "source": "DFIRM_ID",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "flood_area_id",
+            "source": "FLD_AR_ID",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "study_type",
+            "source": "STUDY_TYP",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "flood_zone",
+            "source": "FLD_ZONE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "zone_subtype",
+            "source": "ZONE_SUBTY",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "special_flood_hazard_area",
+            "source": "SFHA_TF",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "static_base_flood_elevation",
+            "source": "STATIC_BFE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "vertical_datum",
+            "source": "V_DATUM",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "depth",
+            "source": "DEPTH",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "length_unit",
+            "source": "LEN_UNIT",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "velocity",
+            "source": "VELOCITY",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "velocity_unit",
+            "source": "VEL_UNIT",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "area_revert",
+            "source": "AR_REVERT",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "area_subtract_revert",
+            "source": "AR_SUBTRV",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "bfe_revert",
+            "source": "BFE_REVERT",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "depth_revert",
+            "source": "DEP_REVERT",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "dual_zone",
+            "source": "DUAL_ZONE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "source_citation",
+            "source": "SOURCE_CIT",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "gfid",
+            "source": "GFID",
+            "transform": "strip"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_fema_nri_counties_live",
+      "source_id": "IF-007",
+      "metro_id": "TX",
+      "interface_name": "if-007-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-007"
+      ],
+      "priority": 35,
+      "description": "Live Texas FEMA National Risk Index county ingest from the official county feature layer.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 12
+      },
+      "request": {
+        "endpoint_url": "https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/National_Risk_Index_Counties/FeatureServer/0",
+        "timeout_seconds": 120.0,
+        "query_params": {
+          "where": "STATEABBRV='TX'",
+          "outFields": "OBJECTID,NRI_ID,NRI_VER,STATE,STATEABBRV,STATEFIPS,COUNTY,COUNTYTYPE,COUNTYFIPS,STCOFIPS,POPULATION,BUILDVALUE,AGRIVALUE,AREA,RISK_VALUE,RISK_SCORE,RISK_RATNG,RISK_SPCTL,EAL_SCORE,EAL_RATNG,EAL_SPCTL,EAL_VALT,EAL_VALB,EAL_VALP,EAL_VALPE,EAL_VALA,SOVI_SCORE,SOVI_RATNG,SOVI_SPCTL,RESL_SCORE,RESL_RATNG,RESL_SPCTL,RESL_VALUE,CRF_VALUE,IFLD_RISKV,IFLD_RISKS,CFLD_RISKV,CFLD_RISKS,HRCN_RISKV,HRCN_RISKS,TRND_RISKV,TRND_RISKS,ERQK_RISKV,ERQK_RISKS,WFIR_RISKV,WFIR_RISKS,DRGT_RISKV,DRGT_RISKS,SWND_RISKV,SWND_RISKS",
+          "returnGeometry": "false",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "record_key_template": "nri-county:{STCOFIPS}",
+        "lineage_key_template": "if007:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "nri_id",
+            "source": "NRI_ID",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "nri_version",
+            "source": "NRI_VER",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "state",
+            "source": "STATE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "state_abbreviation",
+            "source": "STATEABBRV",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "county",
+            "source": "COUNTY",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "county_type",
+            "source": "COUNTYTYPE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "county_fips_suffix",
+            "source": "COUNTYFIPS",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "state_county_fips",
+            "source": "STCOFIPS",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "population_2020",
+            "source": "POPULATION",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "building_value",
+            "source": "BUILDVALUE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "agriculture_value",
+            "source": "AGRIVALUE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "area_sq_mi",
+            "source": "AREA",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "risk_value_composite",
+            "source": "RISK_VALUE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "risk_score_composite",
+            "source": "RISK_SCORE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "risk_rating_composite",
+            "source": "RISK_RATNG",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "risk_state_percentile_composite",
+            "source": "RISK_SPCTL",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "expected_annual_loss_score",
+            "source": "EAL_SCORE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "expected_annual_loss_rating",
+            "source": "EAL_RATNG",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "expected_annual_loss_percentile",
+            "source": "EAL_SPCTL",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "expected_annual_loss_total",
+            "source": "EAL_VALT",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "expected_annual_loss_buildings",
+            "source": "EAL_VALB",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "expected_annual_loss_population",
+            "source": "EAL_VALP",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "expected_annual_loss_population_equivalent",
+            "source": "EAL_VALPE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "expected_annual_loss_agriculture",
+            "source": "EAL_VALA",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "social_vulnerability_score",
+            "source": "SOVI_SCORE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "social_vulnerability_rating",
+            "source": "SOVI_RATNG",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "social_vulnerability_percentile",
+            "source": "SOVI_SPCTL",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "community_resilience_score",
+            "source": "RESL_SCORE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "community_resilience_rating",
+            "source": "RESL_RATNG",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "community_resilience_percentile",
+            "source": "RESL_SPCTL",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "community_resilience_value",
+            "source": "RESL_VALUE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "community_risk_factor",
+            "source": "CRF_VALUE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "inland_flood_risk_value",
+            "source": "IFLD_RISKV",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "inland_flood_risk_score",
+            "source": "IFLD_RISKS",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "coastal_flood_risk_value",
+            "source": "CFLD_RISKV",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "coastal_flood_risk_score",
+            "source": "CFLD_RISKS",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "hurricane_risk_value",
+            "source": "HRCN_RISKV",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "hurricane_risk_score",
+            "source": "HRCN_RISKS",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "tornado_risk_value",
+            "source": "TRND_RISKV",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "tornado_risk_score",
+            "source": "TRND_RISKS",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "earthquake_risk_value",
+            "source": "ERQK_RISKV",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "earthquake_risk_score",
+            "source": "ERQK_RISKS",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "wildfire_risk_value",
+            "source": "WFIR_RISKV",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "wildfire_risk_score",
+            "source": "WFIR_RISKS",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "drought_risk_value",
+            "source": "DRGT_RISKV",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "drought_risk_score",
+            "source": "DRGT_RISKS",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "strong_wind_risk_value",
+            "source": "SWND_RISKV",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "strong_wind_risk_score",
+            "source": "SWND_RISKS",
+            "transform": "stringify"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "dfw_overpass_highways_live",
+      "source_id": "IF-026",
+      "metro_id": "DFW",
+      "interface_name": "if-026-http-json-v1",
+      "adapter_type": "http_json",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-026"
+      ],
+      "priority": 30,
+      "description": "Live Overpass ingest for major DFW highway corridors used in parcel access screening.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 2,
+        "backoff_seconds": 5.0,
+        "rate_limit_per_minute": 2
+      },
+      "request": {
+        "endpoint_url": "https://overpass-api.de/api/interpreter",
+        "method": "POST",
+        "timeout_seconds": 120.0,
+        "headers": {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Accept": "application/json",
+          "User-Agent": "DenseDataCenterLocator/1.0 (DFW highway ingest)"
+        },
+        "body_text": "[out:json][timeout:60];way[\"highway\"~\"^(motorway|trunk)$\"](32.5,-97.5,33.1,-96.5);out body center 250;",
+        "record_path": [
+          "elements"
+        ]
+      },
+      "preprocess_options": {
+        "record_key_template": "osm-way:{id}",
+        "lineage_key_template": "if026:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "highway_type",
+            "source": "tags.highway",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "name",
+            "source": "tags.name",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "ref",
+            "source": "tags.ref",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "maxspeed",
+            "source": "tags.maxspeed",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "latitude",
+            "source": "center.lat",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "longitude",
+            "source": "center.lon",
+            "transform": "stringify"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_overpass_highways_live",
+      "source_id": "IF-026",
+      "metro_id": "TX",
+      "interface_name": "if-026-http-json-v2",
+      "adapter_type": "http_json",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-026"
+      ],
+      "priority": 20,
+      "description": "Live statewide Overpass ingest for Texas motorway and trunk highway corridors.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 2,
+        "backoff_seconds": 5.0,
+        "rate_limit_per_minute": 1
+      },
+      "request": {
+        "endpoint_url": "https://overpass-api.de/api/interpreter",
+        "method": "POST",
+        "timeout_seconds": 180.0,
+        "headers": {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Accept": "application/json",
+          "User-Agent": "DenseDataCenterLocator/1.0 (Texas highway ingest)"
+        },
+        "body_text": "[out:json][timeout:120];area[\"ISO3166-2\"=\"US-TX\"][admin_level=4]->.searchArea;way[\"highway\"~\"^(motorway|trunk)$\"](area.searchArea);out body center 20000;",
+        "record_path": [
+          "elements"
+        ]
+      },
+      "preprocess_options": {
+        "replace_existing_scope": "source_metro",
+        "record_key_template": "osm-way:{id}",
+        "lineage_key_template": "if026:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "highway_type",
+            "source": "tags.highway",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "name",
+            "source": "tags.name",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "ref",
+            "source": "tags.ref",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "maxspeed",
+            "source": "tags.maxspeed",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "latitude",
+            "source": "center.lat",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "longitude",
+            "source": "center.lon",
+            "transform": "stringify"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_rrc_gas_pipelines_live",
+      "source_id": "IF-018",
+      "metro_id": "TX",
+      "interface_name": "if-018-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-018"
+      ],
+      "priority": 34,
+      "description": "Live Railroad Commission of Texas pipeline supplement ingest for natural-gas pipeline evidence.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 10
+      },
+      "request": {
+        "endpoint_url": "https://gis.rrc.texas.gov/server/rest/services/rrc_public/RRC_Public_Viewer_Srvs/MapServer/13",
+        "timeout_seconds": 180.0,
+        "query_params": {
+          "where": "COMMODITY LIKE 'NATURAL GAS%'",
+          "outFields": "OBJECTID,OPERATOR,COMMODITY_DESCRIPTION,SYSTEM_NAME,SUBSYSTEM_NAME,DIAMETER,T4PERMIT,COMMODITY,INTERSTATE,SYSTEM_TYPE,STATUS,COUNTY_FIPS,COUNTY_NAME,P5_NUM",
+          "returnGeometry": "false",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 1000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "replace_existing_scope": "source_metro",
+        "record_key_template": "rrc-pipeline:{OBJECTID}",
+        "lineage_key_template": "if018:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "operator",
+            "source": "OPERATOR",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "commodity",
+            "source": "COMMODITY",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "commodity_description",
+            "source": "COMMODITY_DESCRIPTION",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "system_name",
+            "source": "SYSTEM_NAME",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "subsystem_name",
+            "source": "SUBSYSTEM_NAME",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "diameter",
+            "source": "DIAMETER",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "permit_number",
+            "source": "T4PERMIT",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "system_type",
+            "source": "SYSTEM_TYPE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "status",
+            "source": "STATUS",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "county_name",
+            "source": "COUNTY_NAME",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "county_code",
+            "source": "COUNTY_FIPS",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "p5_number",
+            "source": "P5_NUM",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "interstate",
+            "source": "INTERSTATE",
+            "transform": "strip"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_tceq_water_rights_live",
+      "source_id": "IF-019",
+      "metro_id": "TX",
+      "interface_name": "if-019-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-019"
+      ],
+      "priority": 36,
+      "description": "Live Texas TCEQ water-rights point ingest from the official Water Rights viewer service.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 12
+      },
+      "request": {
+        "endpoint_url": "https://gisweb.tceq.texas.gov/arcgis/rest/services/WaterRights/WaterRightsViewer/MapServer/3",
+        "timeout_seconds": 180.0,
+        "query_params": {
+          "where": "1=1",
+          "outFields": "OBJECTID,TCEQ_ID,TYPE,VERIFIED,LAT_DD,LONG_DD,HORZ_METH,HORZ_ACC,HORZ_REF,HORZ_DATE,HORZ_ORG,HORZ_DATUM,WR_ID,WR_TYPE_NO",
+          "returnGeometry": "false",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 2000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "record_key_template": "water-right:{WR_ID}:{TCEQ_ID}",
+        "lineage_key_template": "if019:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "tceq_id",
+            "source": "TCEQ_ID",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "feature_type",
+            "source": "TYPE",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "verified",
+            "source": "VERIFIED",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "latitude",
+            "source": "LAT_DD",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "longitude",
+            "source": "LONG_DD",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "horizontal_method",
+            "source": "HORZ_METH",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "horizontal_accuracy",
+            "source": "HORZ_ACC",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "horizontal_reference",
+            "source": "HORZ_REF",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "horizontal_date",
+            "source": "HORZ_DATE",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "horizontal_org",
+            "source": "HORZ_ORG",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "horizontal_datum",
+            "source": "HORZ_DATUM",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "water_right_id",
+            "source": "WR_ID",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "water_right_type_number",
+            "source": "WR_TYPE_NO",
+            "transform": "strip"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_twdb_groundwater_live",
+      "source_id": "IF-020",
+      "metro_id": "TX",
+      "interface_name": "if-020-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-020"
+      ],
+      "priority": 37,
+      "description": "Live Texas TWDB groundwater well ingest from the public groundwater feature service.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 12
+      },
+      "request": {
+        "endpoint_url": "https://services.twdb.texas.gov/arcgis/rest/services/Public/TWDB_Groundwater_database/FeatureServer/0",
+        "timeout_seconds": 180.0,
+        "query_params": {
+          "where": "1=1",
+          "outFields": "ObjectId,StateWellNumber,OwnerName,PrimaryWaterUse,Elevation,WaterLevelObservationType,WaterQualityAvailable,AquiferCodeName,CoordDDLat,CoordDDLong,CountyName,WellType,WellDepth",
+          "returnGeometry": "false",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 1000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "replace_existing_scope": "source_metro",
+        "record_key_template": "groundwater-well:{ObjectId}",
+        "lineage_key_template": "if020:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "state_well_number",
+            "source": "StateWellNumber",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "owner_name",
+            "source": "OwnerName",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "primary_water_use",
+            "source": "PrimaryWaterUse",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "elevation",
+            "source": "Elevation",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "water_level_observation_type",
+            "source": "WaterLevelObservationType",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "water_quality_available",
+            "source": "WaterQualityAvailable",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "aquifer_code_name",
+            "source": "AquiferCodeName",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "latitude",
+            "source": "CoordDDLat",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "longitude",
+            "source": "CoordDDLong",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "county_name",
+            "source": "CountyName",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "well_type",
+            "source": "WellType",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "well_depth",
+            "source": "WellDepth",
+            "transform": "stringify"
+          }
+        ]
+      }
+    },
+    {
+      "connector_key": "tx_eia_power_plants_live",
+      "source_id": "IF-025",
+      "metro_id": "TX",
+      "interface_name": "if-025-arcgis-feature-service-v1",
+      "adapter_type": "arcgis_feature_service",
+      "enabled": true,
+      "load_strategy": "evidence",
+      "inventory_if_codes": [
+        "IF-025"
+      ],
+      "priority": 35,
+      "description": "Live Texas electric power plant inventory from the public EIA-derived ArcGIS feature layer.",
+      "preprocess_strategy": "expand_evidence_attributes",
+      "fetch_policy": {
+        "max_attempts": 3,
+        "backoff_seconds": 1.0,
+        "rate_limit_per_minute": 12
+      },
+      "request": {
+        "endpoint_url": "https://services2.arcgis.com/FiaPA4ga0iQKduv3/arcgis/rest/services/Power_Plants_in_the_US/FeatureServer/0",
+        "timeout_seconds": 90.0,
+        "query_params": {
+          "where": "State='Texas'",
+          "outFields": "Plant_Code,Plant_Name,Utility_ID,Utility_Na,sector_nam,Street_Add,City,County,State,Zip,PrimSource,source_des,tech_desc,Install_MW,Total_MW,Bat_MW,Bio_MW,Coal_MW,Geo_MW,Hydro_MW,HydroPS_MW,NG_MW,Nuclear_MW,Crude_MW,Solar_MW,Wind_MW,Other_MW,Source,Period,Longitude,Latitude",
+          "returnGeometry": "false",
+          "f": "json"
+        },
+        "pagination": {
+          "strategy": "arcgis_offset",
+          "page_size": 1000,
+          "offset_param": "resultOffset",
+          "page_size_param": "resultRecordCount"
+        }
+      },
+      "preprocess_options": {
+        "replace_existing_scope": "source_metro",
+        "record_key_template": "power-plant:{Plant_Code}",
+        "lineage_key_template": "if025:{record_key}:{attribute_name}",
+        "attribute_fields": [
+          {
+            "attribute_name": "plant_name",
+            "source": "Plant_Name",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "utility_id",
+            "source": "Utility_ID",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "utility_name",
+            "source": "Utility_Na",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "sector_name",
+            "source": "sector_nam",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "street_address",
+            "source": "Street_Add",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "city",
+            "source": "City",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "county",
+            "source": "County",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "state",
+            "source": "State",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "zip_code",
+            "source": "Zip",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "primary_energy_source",
+            "source": "PrimSource",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "source_description",
+            "source": "source_des",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "technology_description",
+            "source": "tech_desc",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "installed_capacity_mw",
+            "source": "Install_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "summer_capacity_mw",
+            "source": "Total_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "battery_mw",
+            "source": "Bat_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "biomass_mw",
+            "source": "Bio_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "coal_mw",
+            "source": "Coal_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "geothermal_mw",
+            "source": "Geo_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "hydro_mw",
+            "source": "Hydro_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "pumped_storage_hydro_mw",
+            "source": "HydroPS_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "natural_gas_mw",
+            "source": "NG_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "nuclear_mw",
+            "source": "Nuclear_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "petroleum_mw",
+            "source": "Crude_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "solar_mw",
+            "source": "Solar_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "wind_mw",
+            "source": "Wind_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "other_mw",
+            "source": "Other_MW",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "source_surveys",
+            "source": "Source",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "reporting_period",
+            "source": "Period",
+            "transform": "strip"
+          },
+          {
+            "attribute_name": "latitude",
+            "source": "Latitude",
+            "transform": "stringify"
+          },
+          {
+            "attribute_name": "longitude",
+            "source": "Longitude",
+            "transform": "stringify"
+          }
+        ]
+      }
     }
   ]
 }

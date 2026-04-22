@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from statistics import mean
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.core.settings import Settings
+from app.services.live_candidate_scoring import (
+    build_live_candidate_opportunities,
+    build_social_political_overlay,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1190,10 +1197,19 @@ _OPPORTUNITY_SEEDS: tuple[OpportunitySeed, ...] = (
 def build_customer_dashboard_summary(
     settings: Settings,
     *,
+    db_session: Session | None,
     monitoring_snapshot: dict[str, Any],
     source_inventory_snapshot: dict[str, Any],
 ) -> dict[str, Any]:
-    opportunities = _build_opportunities()
+    live_opportunities: list[dict[str, Any]] = []
+    if db_session is not None:
+        try:
+            live_opportunities = build_live_candidate_opportunities(db_session)
+        except Exception:
+            live_opportunities = []
+
+    data_mode = "live_candidate_scoring" if live_opportunities else "seeded_catalog"
+    opportunities = live_opportunities or _build_opportunities()
     featured_opportunities = opportunities[:6]
     corridors = _build_corridors(opportunities)
     unique_universities = sorted(
@@ -1204,6 +1220,7 @@ def build_customer_dashboard_summary(
         1 for item in opportunities if item["readiness_stage"] == "Priority now"
     )
     top_tier_count = sum(1 for item in opportunities if item["score_band"] == "Tier 1")
+    opportunity_count = len(opportunities)
 
     return {
         "app_name": settings.app_name,
@@ -1212,13 +1229,27 @@ def build_customer_dashboard_summary(
         "version": "0.1.0",
         "generated_at": generated_at,
         "market": "Texas",
-        "data_mode": "seeded_catalog",
-        "hero_title": "50 ranked Texas opportunities near cities, utilities, and university talent.",
-        "hero_subtitle": (
-            "Private shortlist designed to help client principals and site selectors focus on metros "
-            "and corridors where power, fiber, land scale, and workforce depth align."
+        "data_mode": data_mode,
+        "hero_title": (
+            f"{opportunity_count} live-ranked Texas opportunities balanced across major metros."
+            if data_mode == "live_candidate_scoring"
+            else (
+                f"{opportunity_count} ranked Texas opportunities near cities, utilities, "
+                "and university talent."
+            )
         ),
-        "opportunity_count": len(opportunities),
+        "hero_subtitle": (
+            "Candidate-first grading is using live marketed sites plus public infrastructure "
+            "signals, with a social-political approval overlay and minimum major-metro coverage "
+            "for client review."
+            if data_mode == "live_candidate_scoring"
+            else (
+                "Private shortlist designed to help client principals and site selectors focus on "
+                "metros and corridors where power, fiber, land scale, workforce depth, and "
+                "approval friction align."
+            )
+        ),
+        "opportunity_count": opportunity_count,
         "priority_now_count": priority_now_count,
         "top_tier_count": top_tier_count,
         "corridor_count": len(corridors),
@@ -1229,6 +1260,7 @@ def build_customer_dashboard_summary(
             corridor_count=len(corridors),
             university_count=len(unique_universities),
             source_inventory_snapshot=source_inventory_snapshot,
+            data_mode=data_mode,
         ),
         "filters": _build_filters(opportunities, unique_universities=unique_universities),
         "featured_opportunities": featured_opportunities,
@@ -1252,6 +1284,17 @@ def _build_opportunities() -> list[dict[str, Any]]:
 
     opportunities: list[dict[str, Any]] = []
     for rank, seed in enumerate(ranked, start=1):
+        approval_overlay = build_social_political_overlay(
+            metro_name=seed.metro,
+            region=seed.region,
+            city_distance=float(seed.distance_to_city_miles),
+            university_distance=float(seed.distance_to_university_miles),
+            acreage=_seed_acreage_estimate(seed.acreage_band),
+            building_sqft=None,
+            water_score=seed.water_score,
+            environment_score=max(seed.water_score - 4, 52),
+            hazard_score=max(seed.water_score - 6, 50),
+        )
         opportunities.append(
             {
                 "rank": rank,
@@ -1284,6 +1327,7 @@ def _build_opportunities() -> list[dict[str, Any]]:
                 ),
                 "lat": seed.lat,
                 "lon": seed.lon,
+                **approval_overlay,
             }
         )
     return opportunities
@@ -1325,19 +1369,28 @@ def _build_metrics(
     corridor_count: int,
     university_count: int,
     source_inventory_snapshot: dict[str, Any],
+    data_mode: str,
 ) -> list[dict[str, Any]]:
     planned_sources = int(source_inventory_snapshot.get("total_sources") or 0)
     return [
         {
             "label": "Texas opportunities",
             "value": len(opportunities),
-            "detail": "Ranked candidate sites seeded for private client review across the state.",
+            "detail": (
+                "Live-scored marketed candidates ranked for private client review across Texas."
+                if data_mode == "live_candidate_scoring"
+                else "Ranked candidate sites seeded for private client review across the state."
+            ),
             "tone": "teal",
         },
         {
             "label": "Priority-now sites",
             "value": priority_now_count,
-            "detail": "Highest-confidence corridors ready for immediate parcel sourcing.",
+            "detail": (
+                "Highest-confidence live candidates ready for immediate parcel validation."
+                if data_mode == "live_candidate_scoring"
+                else "Highest-confidence corridors ready for immediate parcel sourcing."
+            ),
             "tone": "gold",
         },
         {
@@ -1355,7 +1408,9 @@ def _build_metrics(
         {
             "label": "Public data sources",
             "value": planned_sources,
-            "detail": "Authoritative free sources planned to back the live parcel-scoring pipeline.",
+            "detail": (
+                "Authoritative free sources planned to back the live parcel-scoring pipeline."
+            ),
             "tone": "sage",
         },
     ]
@@ -1372,6 +1427,16 @@ def _build_filters(
         "corridors": sorted({item["corridor_name"] for item in opportunities}),
         "university_anchors": unique_universities,
     }
+
+
+def _seed_acreage_estimate(acreage_band: str) -> float | None:
+    matches = re.findall(r"\d+(?:\.\d+)?", acreage_band)
+    if not matches:
+        return None
+    values = [float(item) for item in matches[:2]]
+    if len(values) == 1:
+        return values[0]
+    return round(mean(values), 1)
 
 
 def _score_band(score: int) -> str:

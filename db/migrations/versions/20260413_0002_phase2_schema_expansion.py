@@ -7,6 +7,7 @@ Create Date: 2026-04-13 23:45:00
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "20260413_0002"
 down_revision = "20260413_0001"
@@ -14,13 +15,14 @@ branch_labels = None
 depends_on = None
 
 
-source_snapshot_status = sa.Enum(
+source_snapshot_status = postgresql.ENUM(
     "success",
     "failed",
     "quarantined",
     name="source_snapshot_status",
+    create_type=False,
 )
-parcel_evaluation_status = sa.Enum(
+parcel_evaluation_status = postgresql.ENUM(
     "prefiltered_band",
     "prefiltered_size",
     "pending_exclusion_check",
@@ -28,6 +30,7 @@ parcel_evaluation_status = sa.Enum(
     "scored",
     "excluded",
     name="parcel_evaluation_status",
+    create_type=False,
 )
 
 

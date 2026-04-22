@@ -17,7 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.db.models.enums import ParcelEvaluationStatus
+from app.db.models.enums import ParcelEvaluationStatus, enum_values
 from app.db.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
@@ -45,7 +45,11 @@ class ParcelEvaluation(TimestampMixin, Base):
         nullable=False,
     )
     status: Mapped[ParcelEvaluationStatus] = mapped_column(
-        Enum(ParcelEvaluationStatus, name="parcel_evaluation_status"),
+        Enum(
+            ParcelEvaluationStatus,
+            name="parcel_evaluation_status",
+            values_callable=enum_values,
+        ),
         nullable=False,
         default=ParcelEvaluationStatus.PENDING_EXCLUSION_CHECK,
     )

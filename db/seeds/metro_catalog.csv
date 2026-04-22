@@ -1,5 +1,11 @@
 metro_id,display_name,state_code,is_active
+TX,Texas Statewide,TX,true
 DFW,Dallas-Fort Worth,TX,true
+HOU,Houston,TX,true
+SAT,San Antonio,TX,true
 AUS,Austin,TX,true
-PHX,Phoenix,AZ,true
-LAS,Las Vegas,NV,true
+ELP,El Paso,TX,true
+LRD,Laredo,TX,true
+MFE,McAllen,TX,true
+CRP,Corpus Christi,TX,true
+MAF,Midland,TX,true

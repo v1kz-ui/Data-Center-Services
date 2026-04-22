@@ -1,7 +1,7 @@
 bonus_id,display_name,description,max_points,is_active
-B01,Bonus 01,Placeholder definition for bonus B01,5,true
-B02,Bonus 02,Placeholder definition for bonus B02,5,true
-B03,Bonus 03,Placeholder definition for bonus B03,5,true
-B04,Bonus 04,Placeholder definition for bonus B04,5,true
-B05,Bonus 05,Placeholder definition for bonus B05,5,true
+B01,Actively marketed site bonus,Adds credit when a parcel is tied to an active live market listing.,1,true
+B02,Sweet-spot footprint bonus,Adds credit for 1 to 3 acre sites or practical retrofit-ready building sizes.,1,true
+B03,Power plus fiber adjacency bonus,Adds credit when both power and fiber proximity clear the preferred thresholds.,1,true
+B04,City or university proximity bonus,Adds credit when metro or university access is within the preferred radius.,1,true
+B05,Pricing transparency bonus,Adds credit when pricing context is strong relative to the metro market median.,1,true
 

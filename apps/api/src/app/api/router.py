@@ -5,6 +5,7 @@ from app.api.routes import (
     connectors,
     evaluation,
     ingestion,
+    market_listings,
     monitoring,
     orchestration,
     parcels,
@@ -20,6 +21,7 @@ api_router.include_router(audit.router, tags=["audit"])
 api_router.include_router(connectors.router, tags=["connectors"])
 api_router.include_router(evaluation.router, tags=["evaluation"])
 api_router.include_router(ingestion.router, tags=["ingestion"])
+api_router.include_router(market_listings.router, tags=["market-listings"])
 api_router.include_router(monitoring.router, tags=["monitoring"])
 api_router.include_router(orchestration.router, tags=["orchestration"])
 api_router.include_router(parcels.router, tags=["parcels"])

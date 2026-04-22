@@ -1,6 +1,55 @@
 source_id,display_name,owner_name,refresh_cadence,block_refresh,metro_coverage,target_table_name,is_active
-PARCEL,Approved Parcel Feed,Data Governance,daily,true,"DFW,AUS,PHX,LAS",raw_parcels,true
-ZONING,Approved Zoning Feed,Data Governance,weekly,true,"DFW,AUS,PHX,LAS",raw_zoning,true
-FLOOD,Flood Risk Feed,Data Governance,daily,true,"DFW,AUS,PHX,LAS",source_evidence,true
-UTILITY,Utility Evidence Feed,Data Governance,weekly,false,"DFW,AUS,PHX,LAS",source_evidence,true
-MARKET,Market Proxy Feed,Data Governance,weekly,false,"DFW,AUS,PHX,LAS",source_evidence,true
+IF-001,HIFLD Substations,Federal / State Program,daily,false,TX,source_evidence,true
+IF-002,HIFLD Transmission Lines,Federal / State Program,daily,false,TX,source_evidence,true
+IF-003,HIFLD Gas Pipelines,Federal / State Program,daily,false,TX,source_evidence,true
+IF-004,HIFLD Gas Compressors,Federal / State Program,daily,false,TX,source_evidence,true
+IF-005,HIFLD Service Territories,Federal / State Program,daily,false,TX,source_evidence,true
+IF-006,FEMA NFHL Flood Zones,Federal / State Program,daily,false,TX,source_evidence,true
+IF-007,FEMA NRI Risk Index,Federal / State Program,daily,false,TX,source_evidence,true
+IF-008,FCC Broadband Map,Federal / State Program,monthly,false,TX,source_evidence,true
+IF-009,PeeringDB,Federal / State Program,daily,false,TX,source_evidence,true
+IF-010,Census ACS,Federal / State Program,daily,false,TX,source_evidence,true
+IF-011,Census TIGER Boundaries,Federal / State Program,daily,false,TX,source_evidence,true
+IF-012,BLS QCEW Employment,Federal / State Program,daily,false,TX,source_evidence,true
+IF-013,ERCOT LMP Data,Federal / State Program,monthly,false,TX,source_evidence,true
+IF-014,ERCOT Grid Maps,Federal / State Program,monthly,false,TX,source_evidence,true
+IF-015,ERCOT Large Load Queue,Federal / State Program,monthly,false,TX,source_evidence,true
+IF-016,Oncor Hosting Capacity,Federal / State Program,daily,false,TX,source_evidence,true
+IF-017,CenterPoint Hosting Capacity,Federal / State Program,daily,false,TX,source_evidence,true
+IF-018,RRC Texas Pipelines,Federal / State Program,monthly,false,TX,source_evidence,true
+IF-019,TCEQ Water Rights,Federal / State Program,daily,false,TX,source_evidence,true
+IF-020,TWDB Groundwater,Federal / State Program,monthly,false,TX,source_evidence,true
+IF-021,USGS NWIS Water,Federal / State Program,daily,false,TX,source_evidence,true
+IF-022,USGS Earthquake Hazards,Federal / State Program,daily,false,TX,source_evidence,true
+IF-023,EPA Superfund Sites,Federal / State Program,daily,false,TX,source_evidence,true
+IF-024,USFWS Critical Habitat,Federal / State Program,daily,false,TX,source_evidence,true
+IF-025,EIA Power Plants,Federal / State Program,daily,false,TX,source_evidence,true
+IF-026,OSM Overpass (Highways),Federal / State Program,daily,false,TX,source_evidence,true
+IF-027,NTIA BEAD Program,Federal / State Program,monthly,false,TX,source_evidence,true
+IF-028,TX Comptroller Tax Data,Federal / State Program,monthly,false,TX,source_evidence,true
+IF-029,DCAD (Dallas),County Appraisal District,daily,true,DFW,raw_parcels,true
+IF-030,TAD (Tarrant),County Appraisal District,daily,true,DFW,raw_parcels,true
+IF-031,Collin CAD,County Appraisal District,daily,true,DFW,raw_parcels,true
+IF-032,Denton CAD,County Appraisal District,daily,true,DFW,raw_parcels,true
+IF-033,HCAD (Harris),County Appraisal District,daily,true,HOU,raw_parcels,true
+IF-034,Fort Bend CAD,County Appraisal District,daily,true,HOU,raw_parcels,true
+IF-035,Montgomery CAD,County Appraisal District,daily,true,HOU,raw_parcels,true
+IF-036,BCAD (Bexar),County Appraisal District,daily,true,SAT,raw_parcels,true
+IF-037,TCAD (Travis),County Appraisal District,daily,true,AUS,raw_parcels,true
+IF-038,Williamson CAD,County Appraisal District,daily,true,AUS,raw_parcels,true
+IF-039,El Paso CAD,County Appraisal District,daily,true,ELP,raw_parcels,true
+IF-040,Webb CAD (Laredo),County Appraisal District,daily,true,LRD,raw_parcels,true
+IF-041,Hidalgo CAD (McAllen),County Appraisal District,daily,true,MFE,raw_parcels,true
+IF-042,Nueces CAD (Corpus Christi),County Appraisal District,daily,true,CRP,raw_parcels,true
+IF-043,Midland CAD,County Appraisal District,daily,true,MAF,raw_parcels,true
+IF-044,Dallas Zoning,City GIS / Planning,weekly,true,DFW,raw_zoning,true
+IF-045,Fort Worth Zoning,City GIS / Planning,weekly,true,DFW,raw_zoning,true
+IF-046,San Antonio Zoning,City GIS / Planning,weekly,true,SAT,raw_zoning,true
+IF-047,Austin Zoning,City GIS / Planning,weekly,true,AUS,raw_zoning,true
+IF-048,El Paso Zoning,City GIS / Planning,weekly,true,ELP,raw_zoning,true
+IF-049,Laredo Zoning,City GIS / Planning,weekly,true,LRD,raw_zoning,true
+IF-050,McAllen Zoning,City GIS / Planning,weekly,true,MFE,raw_zoning,true
+IF-051,Corpus Christi Zoning,City GIS / Planning,weekly,true,CRP,raw_zoning,true
+LISTING,Market Listings Scraper,Data Governance,daily,false,TX,market_listings,true
+PARCEL,Canonical Parcel Pipeline,Data Governance,daily,true,DFW,raw_parcels,true
+ZONING,Canonical Zoning Pipeline,Data Governance,weekly,true,DFW,raw_zoning,true

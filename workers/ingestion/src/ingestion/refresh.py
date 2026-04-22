@@ -1,33 +1,42 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import UUID
 
 from shapely import wkt
 from shapely.errors import ShapelyError
+from shapely.geometry import shape as shapely_shape
+from shapely.strtree import STRtree
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models.catalogs import SourceCatalog
 from app.db.models.connectors import SourceRefreshCheckpoint, SourceRefreshJob
 from app.db.models.ingestion import SourceSnapshot
-from app.db.models.territory import ParcelRepPoint, RawParcel
+from app.db.models.territory import MetroCatalog, ParcelRepPoint, RawParcel
 from ingestion.adapters import build_source_version
 from ingestion.connectors import (
     ConnectorCheckpoint,
     ConnectorConfigurationError,
     ConnectorExecutionError,
     ConnectorRegistry,
+    SourceConnectorFieldRule,
     fetch_connector_records,
+    resolve_connector_field_rule_value,
 )
 from ingestion.service import (
     _get_cadence_window,
     _get_latest_snapshot,
     ingest_evidence_records,
+    ingest_market_listing_records,
     ingest_parcel_records,
     ingest_zoning_records,
 )
+
+_BOUNDARY_GEOMETRY_CACHE: dict[str, object] = {}
 
 
 @dataclass(slots=True)
@@ -38,6 +47,7 @@ class ConnectorDefinitionSummary:
     interface_name: str
     adapter_type: str
     enabled: bool
+    load_strategy: str
     inventory_if_codes: list[str]
     priority: int
     description: str | None
@@ -56,6 +66,7 @@ class SourceRefreshPlanItem:
     interface_name: str
     refresh_cadence: str
     enabled: bool
+    load_strategy: str
     priority: int
     preprocess_strategy: str | None
     due: bool
@@ -123,6 +134,7 @@ def list_connector_definitions(
                 interface_name=definition.interface_name,
                 adapter_type=definition.adapter_type,
                 enabled=definition.enabled,
+                load_strategy=definition.load_strategy,
                 inventory_if_codes=list(definition.inventory_if_codes),
                 priority=definition.priority,
                 description=definition.description,
@@ -166,6 +178,7 @@ def build_refresh_plan(
             if source_catalog is not None
             else "daily"
         )
+        metro_catalog = session.get(MetroCatalog, definition.normalized_metro_id)
         cadence_window = _get_cadence_window(refresh_cadence)
         latest_snapshot_ts = _snapshot_ts(latest_snapshot)
         latest_snapshot_status = _snapshot_status(latest_snapshot)
@@ -175,12 +188,19 @@ def build_refresh_plan(
         due = False
         if not definition.enabled:
             due_reason = "connector_disabled"
+        elif source_catalog is None or not source_catalog.is_active:
+            due_reason = "source_not_configured"
+        elif metro_catalog is None:
+            due_reason = "metro_not_configured"
         elif latest_snapshot is None:
             due = True
             due_reason = "missing_snapshot"
         elif latest_snapshot_status == "failed":
             due = True
             due_reason = "latest_snapshot_failed"
+        elif latest_snapshot_status == "quarantined":
+            due = True
+            due_reason = "latest_snapshot_quarantined"
         else:
             next_due_at = latest_snapshot_ts + cadence_window if latest_snapshot_ts else None
             due = next_due_at is None or evaluated_at >= next_due_at
@@ -194,6 +214,7 @@ def build_refresh_plan(
                 interface_name=definition.interface_name,
                 refresh_cadence=refresh_cadence,
                 enabled=definition.enabled,
+                load_strategy=definition.load_strategy,
                 priority=definition.priority,
                 preprocess_strategy=definition.preprocess_strategy,
                 due=due,
@@ -282,12 +303,23 @@ def refresh_source_connector(
         load_report = _ingest_connector_records(
             session=session,
             source_id=definition.normalized_source_id,
+            load_strategy=definition.load_strategy,
             metro_id=definition.normalized_metro_id,
             source_version=source_version,
             records=prepared_records,
             loaded_at=snapshot_ts,
             connector_key=definition.connector_key,
+            replace_existing_scope=definition.preprocess_options.get(
+                "replace_existing_scope"
+            ),
+            listing_source_id=definition.preprocess_options.get("listing_source_id"),
         )
+        checkpoint_model = _get_refresh_checkpoint(
+            session,
+            connector_key=definition.connector_key,
+        )
+        job = _ensure_refresh_job_row(session=session, job=job)
+        session.flush()
         completed_at = datetime.now(UTC)
         job.status = load_report.status
         job.completed_at = completed_at
@@ -316,10 +348,17 @@ def refresh_source_connector(
         session.commit()
         return _to_job_report(job)
     except Exception as exc:
+        session.rollback()
+        checkpoint_model = _get_refresh_checkpoint(
+            session,
+            connector_key=definition.connector_key,
+        )
+        job = _ensure_refresh_job_row(session=session, job=job)
+        session.flush()
         job.status = "failed"
         job.completed_at = datetime.now(UTC)
         job.error_message = str(exc)
-        job.attempt_count = max(job.attempt_count, 1)
+        job.attempt_count = max(job.attempt_count or 0, 1)
         _upsert_refresh_checkpoint(
             session=session,
             definition=definition,
@@ -412,33 +451,83 @@ def _get_refresh_checkpoint(
     return session.scalar(statement)
 
 
+def _ensure_refresh_job_row(
+    *,
+    session: Session,
+    job: SourceRefreshJob,
+) -> SourceRefreshJob:
+    persisted_job = session.get(SourceRefreshJob, job.job_id)
+    if persisted_job is not None:
+        return persisted_job
+
+    persisted_job = SourceRefreshJob(
+        job_id=job.job_id,
+        source_id=job.source_id,
+        metro_id=job.metro_id,
+        connector_key=job.connector_key,
+        trigger_mode=job.trigger_mode,
+        actor_name=job.actor_name,
+        status=job.status,
+        started_at=job.started_at,
+        checkpoint_in_ts=job.checkpoint_in_ts,
+        checkpoint_cursor_in=job.checkpoint_cursor_in,
+    )
+    session.add(persisted_job)
+    return persisted_job
+
+
 def _ingest_connector_records(
     *,
     session: Session,
     source_id: str,
+    load_strategy: str,
     metro_id: str,
     source_version: str,
     records: list[dict[str, object]],
     loaded_at: datetime,
     connector_key: str | None = None,
+    replace_existing_scope: str | None = None,
+    listing_source_id: str | None = None,
 ):
-    if source_id == "PARCEL":
+    normalized_strategy = load_strategy.strip().lower()
+    if normalized_strategy == "parcel":
         return ingest_parcel_records(
             session=session,
+            source_id=source_id,
+            metro_id=metro_id,
+            source_version=source_version,
+            records=records,
+            loaded_at=loaded_at,
+            connector_key=connector_key,
+            replace_existing_scope=replace_existing_scope,
+        )
+    if normalized_strategy == "zoning":
+        return ingest_zoning_records(
+            session=session,
+            source_id=source_id,
             metro_id=metro_id,
             source_version=source_version,
             records=records,
             loaded_at=loaded_at,
             connector_key=connector_key,
         )
-    if source_id == "ZONING":
-        return ingest_zoning_records(
+    if normalized_strategy == "market_listing":
+        if listing_source_id is None:
+            raise ConnectorConfigurationError(
+                f"Connector `{connector_key or source_id}` requires "
+                "preprocess_options.listing_source_id "
+                "when using the `market_listing` load strategy."
+            )
+        return ingest_market_listing_records(
             session=session,
+            source_id=source_id,
             metro_id=metro_id,
             source_version=source_version,
             records=records,
+            listing_source_id=listing_source_id,
             loaded_at=loaded_at,
             connector_key=connector_key,
+            replace_existing_scope=replace_existing_scope,
         )
     return ingest_evidence_records(
         session=session,
@@ -448,6 +537,7 @@ def _ingest_connector_records(
         records=records,
         loaded_at=loaded_at,
         connector_key=connector_key,
+        replace_existing_scope=replace_existing_scope,
     )
 
 
@@ -465,6 +555,16 @@ def _preprocess_connector_records(
         return _expand_zoning_overlay_records(
             session=session,
             metro_id=metro_id,
+            records=records,
+        )
+    if strategy == "expand_evidence_attributes":
+        return _expand_evidence_attribute_records(
+            definition=definition,
+            records=records,
+        )
+    if strategy == "spatial_filter_expand_evidence_attributes":
+        return _spatial_filter_expand_evidence_attribute_records(
+            definition=definition,
             records=records,
         )
     raise ConnectorConfigurationError(
@@ -492,13 +592,18 @@ def _expand_zoning_overlay_records(
         )
 
     parcel_points: list[tuple[str, str, object]] = []
+    point_geometries: list[object] = []
     for parcel_id, county_fips, rep_point_wkt in parcel_rows:
         try:
-            parcel_points.append((parcel_id, county_fips, wkt.loads(rep_point_wkt)))
+            point_geometry = wkt.loads(rep_point_wkt)
         except (TypeError, ShapelyError) as exc:
             raise ConnectorExecutionError(
                 f"Parcel `{parcel_id}` has an invalid representative point."
             ) from exc
+        parcel_points.append((parcel_id, county_fips, point_geometry))
+        point_geometries.append(point_geometry)
+
+    spatial_index = STRtree(point_geometries)
 
     best_matches: dict[str, tuple[float, dict[str, object]]] = {}
     for row_number, record in enumerate(records, start=1):
@@ -522,7 +627,11 @@ def _expand_zoning_overlay_records(
         zone_area = float(zone_geometry.area) if not zone_geometry.is_empty else float("inf")
         lineage_prefix = _safe_string(record.get("lineage_key")) or f"zoning-overlay:{row_number}"
 
-        for parcel_id, county_fips, parcel_point in parcel_points:
+        # Query the parcel points spatial index first so we only test parcels
+        # whose bounding boxes intersect the zoning polygon.
+        candidate_indexes = spatial_index.query(zone_geometry)
+        for candidate_index in candidate_indexes:
+            parcel_id, county_fips, parcel_point = parcel_points[int(candidate_index)]
             if county_filter is not None and county_filter != county_fips:
                 continue
             if not zone_geometry.covers(parcel_point):
@@ -541,6 +650,188 @@ def _expand_zoning_overlay_records(
         best_matches[parcel_id][1]
         for parcel_id in sorted(best_matches)
     ]
+
+
+def _expand_evidence_attribute_records(
+    *,
+    definition,
+    records: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    attribute_fields = definition.preprocess_options.get("attribute_fields") or []
+    if not attribute_fields:
+        raise ConnectorConfigurationError(
+            f"Connector `{definition.connector_key}` requires `attribute_fields` when "
+            "using `expand_evidence_attributes`."
+        )
+
+    record_key_template = _safe_string(
+        definition.preprocess_options.get("record_key_template")
+    )
+    lineage_key_template = _safe_string(
+        definition.preprocess_options.get("lineage_key_template")
+    ) or "{record_key}:{attribute_name}"
+    county_rule = _build_optional_rule(
+        target="county_fips",
+        source=definition.preprocess_options.get("county_fips_source"),
+        transform="strip",
+    )
+    parcel_rule = _build_optional_rule(
+        target="parcel_id",
+        source=definition.preprocess_options.get("parcel_id_source"),
+        transform="strip",
+    )
+
+    expanded_records: list[dict[str, object]] = []
+    for row_number, raw_record in enumerate(records, start=1):
+        base_context = dict(raw_record)
+        record_key = (
+            record_key_template.format_map(base_context)
+            if record_key_template is not None
+            else str(raw_record.get("__feature_id__") or row_number)
+        )
+        county_fips = (
+            resolve_connector_field_rule_value(
+                raw_record=raw_record,
+                mapped_record={},
+                field_rule=county_rule,
+            )
+            if county_rule is not None
+            else None
+        )
+        parcel_id = (
+            resolve_connector_field_rule_value(
+                raw_record=raw_record,
+                mapped_record={},
+                field_rule=parcel_rule,
+            )
+            if parcel_rule is not None
+            else None
+        )
+
+        for attribute_config in attribute_fields:
+            field_rule = SourceConnectorFieldRule(
+                target="attribute_value",
+                source=attribute_config.get("source"),
+                transform=attribute_config.get("transform", "identity"),
+                template=attribute_config.get("template"),
+                default=attribute_config.get("default"),
+                options=dict(attribute_config.get("options") or {}),
+            )
+            attribute_name = _safe_string(attribute_config.get("attribute_name"))
+            if attribute_name is None:
+                raise ConnectorConfigurationError(
+                    f"Connector `{definition.connector_key}` has an evidence attribute "
+                    "without `attribute_name`."
+                )
+            attribute_value = resolve_connector_field_rule_value(
+                raw_record=raw_record,
+                mapped_record={},
+                field_rule=field_rule,
+            )
+            if attribute_value is None or str(attribute_value).strip() == "":
+                continue
+
+            lineage_context = {
+                **base_context,
+                "record_key": record_key,
+                "attribute_name": attribute_name,
+            }
+            expanded_records.append(
+                {
+                    "record_key": record_key,
+                    "attribute_name": attribute_name,
+                    "attribute_value": str(attribute_value),
+                    "lineage_key": lineage_key_template.format_map(lineage_context),
+                    "county_fips": county_fips,
+                    "parcel_id": parcel_id,
+                }
+            )
+
+    return expanded_records
+
+
+def _spatial_filter_expand_evidence_attribute_records(
+    *,
+    definition,
+    records: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    boundary_geometry = _load_boundary_geometry(definition)
+    filtered_records: list[dict[str, object]] = []
+
+    for row_number, raw_record in enumerate(records, start=1):
+        geometry_payload = raw_record.get("__geometry__")
+        if geometry_payload is None:
+            raise ConnectorExecutionError(
+                "Spatial evidence filtering requires `__geometry__` on each source row."
+            )
+        try:
+            source_geometry = shapely_shape(geometry_payload)
+        except (AttributeError, TypeError, ValueError, ShapelyError) as exc:
+            raise ConnectorExecutionError(
+                f"Spatial evidence row {row_number} has invalid geometry."
+            ) from exc
+
+        if source_geometry.is_empty:
+            continue
+        if not source_geometry.intersects(boundary_geometry):
+            continue
+        filtered_records.append(dict(raw_record))
+
+    return _expand_evidence_attribute_records(
+        definition=definition,
+        records=filtered_records,
+    )
+
+
+def _load_boundary_geometry(definition):
+    boundary_geojson_path = _safe_string(
+        definition.preprocess_options.get("boundary_geojson_path")
+    )
+    boundary_wkt = _safe_string(definition.preprocess_options.get("boundary_wkt"))
+
+    if boundary_geojson_path is not None:
+        boundary_path = Path(boundary_geojson_path)
+        cache_key = f"geojson:{boundary_path.resolve()}"
+        cached_geometry = _BOUNDARY_GEOMETRY_CACHE.get(cache_key)
+        if cached_geometry is not None:
+            return cached_geometry
+        if not boundary_path.exists():
+            raise ConnectorConfigurationError(
+                f"Connector `{definition.connector_key}` boundary path "
+                f"`{boundary_path}` does not exist."
+            )
+        payload = json.loads(boundary_path.read_text(encoding="utf-8"))
+        geometry_payload = payload.get("geometry") if payload.get("type") == "Feature" else payload
+        try:
+            boundary_geometry = shapely_shape(geometry_payload)
+        except (AttributeError, TypeError, ValueError, ShapelyError) as exc:
+            raise ConnectorConfigurationError(
+                f"Connector `{definition.connector_key}` boundary GeoJSON is invalid."
+            ) from exc
+    elif boundary_wkt is not None:
+        cache_key = f"wkt:{boundary_wkt}"
+        cached_geometry = _BOUNDARY_GEOMETRY_CACHE.get(cache_key)
+        if cached_geometry is not None:
+            return cached_geometry
+        try:
+            boundary_geometry = wkt.loads(boundary_wkt)
+        except (TypeError, ShapelyError) as exc:
+            raise ConnectorConfigurationError(
+                f"Connector `{definition.connector_key}` boundary WKT is invalid."
+            ) from exc
+    else:
+        raise ConnectorConfigurationError(
+            f"Connector `{definition.connector_key}` requires `boundary_geojson_path` "
+            "or `boundary_wkt` when using `spatial_filter_expand_evidence_attributes`."
+        )
+
+    if boundary_geometry.is_empty:
+        raise ConnectorConfigurationError(
+            f"Connector `{definition.connector_key}` boundary geometry cannot be empty."
+        )
+
+    _BOUNDARY_GEOMETRY_CACHE[cache_key] = boundary_geometry
+    return boundary_geometry
 
 
 def _snapshot_ts(snapshot: SourceSnapshot | None) -> datetime | None:
@@ -592,3 +883,19 @@ def _safe_string(value: object) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _build_optional_rule(
+    *,
+    target: str,
+    source: object,
+    transform: str = "identity",
+) -> SourceConnectorFieldRule | None:
+    normalized_source = _safe_string(source)
+    if normalized_source is None:
+        return None
+    return SourceConnectorFieldRule(
+        target=target,
+        source=normalized_source,
+        transform=transform,
+    )

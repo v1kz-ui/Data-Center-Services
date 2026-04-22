@@ -5,7 +5,7 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Tex
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.db.models.enums import ScoringProfileStatus
+from app.db.models.enums import ScoringProfileStatus, enum_values
 from app.db.models.mixins import TimestampMixin
 
 
@@ -70,7 +70,11 @@ class ScoringProfile(TimestampMixin, Base):
     profile_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     version_label: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[ScoringProfileStatus] = mapped_column(
-        Enum(ScoringProfileStatus, name="scoring_profile_status"),
+        Enum(
+            ScoringProfileStatus,
+            name="scoring_profile_status",
+            values_callable=enum_values,
+        ),
         nullable=False,
         default=ScoringProfileStatus.DRAFT,
     )

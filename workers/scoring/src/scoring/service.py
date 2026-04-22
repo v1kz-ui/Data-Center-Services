@@ -106,15 +106,23 @@ def score_run(
     now = datetime.now(UTC)
     _prepare_run_for_scoring(run, policy)
 
-    freshness_report = evaluate_freshness(session, run.metro_id, evaluated_at=now)
-    if not freshness_report.passed:
-        first_failure = next(status for status in freshness_report.statuses if not status.passed)
-        run.status = ScoreRunStatus.FAILED
-        run.failure_reason = first_failure.freshness_code
-        run.completed_at = now
-        reconcile_batch_for_run(session, run.run_id)
-        session.commit()
-        return get_scoring_summary(session, run.run_id)
+    if not policy.skip_freshness_gate:
+        freshness_report = evaluate_freshness(
+            session,
+            run.metro_id,
+            evaluated_at=now,
+            source_ids=policy.freshness_source_ids or None,
+        )
+        if not freshness_report.passed:
+            first_failure = next(
+                status for status in freshness_report.statuses if not status.passed
+            )
+            run.status = ScoreRunStatus.FAILED
+            run.failure_reason = first_failure.freshness_code
+            run.completed_at = now
+            reconcile_batch_for_run(session, run.run_id)
+            session.commit()
+            return get_scoring_summary(session, run.run_id)
 
     profile, profile_factors = _resolve_profile(session, policy, now)
     bonuses = _load_bonus_catalog(session)

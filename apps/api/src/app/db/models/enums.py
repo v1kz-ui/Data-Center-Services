@@ -7,6 +7,10 @@ class ScoringProfileStatus(StrEnum):
     RETIRED = "retired"
 
 
+def enum_values(enum_cls: type[StrEnum]) -> list[str]:
+    return [member.value for member in enum_cls]
+
+
 class ScoreBatchStatus(StrEnum):
     BUILDING = "building"
     FAILED = "failed"

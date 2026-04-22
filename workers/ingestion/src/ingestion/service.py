@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -15,8 +16,9 @@ from sqlalchemy.orm import Session
 from app.db.models.catalogs import SourceCatalog
 from app.db.models.enums import SourceSnapshotStatus
 from app.db.models.ingestion import SourceSnapshot
+from app.db.models.market import ListingSourceCatalog, MarketListing
 from app.db.models.source_data import RawZoning, SourceEvidence, SourceRecordRejection
-from app.db.models.territory import CountyCatalog, ParcelRepPoint, RawParcel
+from app.db.models.territory import CountyCatalog, MetroCatalog, ParcelRepPoint, RawParcel
 from ingestion.adapters import SourceAdapter
 from ingestion.models import (
     MetroFreshnessReport,
@@ -32,6 +34,11 @@ CADENCE_WINDOWS = {
     "weekly": timedelta(days=8),
     "monthly": timedelta(days=32),
 }
+
+QUERY_BATCH_SIZE = 5000
+RAW_PARCEL_ACREAGE_MAX = Decimal("9999999999.99")
+_BENIGN_REJECTION_CODES = frozenset({"DUPLICATE_RECORD"})
+_MINOR_REJECTION_RATE_SUCCESS_THRESHOLD = 0.01
 
 
 class SourceConfigurationError(LookupError):
@@ -78,6 +85,10 @@ def load_from_adapter(
             records=records,
             loaded_at=loaded_at,
         )
+    if adapter.source_id == "LISTING":
+        raise UnsupportedSourceError(
+            "Use refresh-driven listing ingestion for market listing sources."
+        )
     return ingest_evidence_records(
         session=session,
         source_id=adapter.source_id,
@@ -94,17 +105,20 @@ def ingest_parcel_records(
     source_version: str,
     records: Sequence[RecordPayload],
     loaded_at: datetime | None = None,
+    source_id: str = "PARCEL",
     connector_key: str | None = None,
+    replace_existing_scope: str | None = None,
 ) -> SourceLoadReport:
     return _ingest_records(
         session=session,
-        source_id="PARCEL",
+        source_id=source_id.strip().upper(),
         metro_id=metro_id,
         source_version=source_version,
         records=records,
         loaded_at=loaded_at,
         connector_key=connector_key,
         processor=_process_parcel_records,
+        processor_kwargs={"replace_existing_scope": replace_existing_scope},
     )
 
 
@@ -114,11 +128,12 @@ def ingest_zoning_records(
     source_version: str,
     records: Sequence[RecordPayload],
     loaded_at: datetime | None = None,
+    source_id: str = "ZONING",
     connector_key: str | None = None,
 ) -> SourceLoadReport:
     return _ingest_records(
         session=session,
-        source_id="ZONING",
+        source_id=source_id.strip().upper(),
         metro_id=metro_id,
         source_version=source_version,
         records=records,
@@ -136,6 +151,7 @@ def ingest_evidence_records(
     records: Sequence[RecordPayload],
     loaded_at: datetime | None = None,
     connector_key: str | None = None,
+    replace_existing_scope: str | None = None,
 ) -> SourceLoadReport:
     normalized_source_id = source_id.strip().upper()
     if normalized_source_id in {"PARCEL", "ZONING"}:
@@ -152,6 +168,41 @@ def ingest_evidence_records(
         loaded_at=loaded_at,
         connector_key=connector_key,
         processor=_process_evidence_records,
+        processor_kwargs={"replace_existing_scope": replace_existing_scope},
+    )
+
+
+def ingest_market_listing_records(
+    session: Session,
+    source_id: str,
+    metro_id: str,
+    source_version: str,
+    records: Sequence[RecordPayload],
+    *,
+    listing_source_id: str,
+    loaded_at: datetime | None = None,
+    connector_key: str | None = None,
+    replace_existing_scope: str | None = None,
+) -> SourceLoadReport:
+    normalized_source_id = source_id.strip().upper()
+    if normalized_source_id in {"PARCEL", "ZONING"}:
+        raise UnsupportedSourceError(
+            "Use the parcel or zoning ingestion path for canonical records."
+        )
+
+    return _ingest_records(
+        session=session,
+        source_id=normalized_source_id,
+        metro_id=metro_id,
+        source_version=source_version,
+        records=records,
+        loaded_at=loaded_at,
+        connector_key=connector_key,
+        processor=_process_market_listing_records,
+        processor_kwargs={
+            "listing_source_id": listing_source_id,
+            "replace_existing_scope": replace_existing_scope,
+        },
     )
 
 
@@ -159,12 +210,65 @@ def evaluate_freshness(
     session: Session,
     metro_id: str,
     evaluated_at: datetime | None = None,
+    source_ids: Sequence[str] | None = None,
 ) -> MetroFreshnessReport:
     normalized_metro_id = _canonicalize_metro_id(metro_id)
     evaluated_at = _coerce_timestamp(evaluated_at)
     statuses: list[SourceFreshnessStatus] = []
+    active_sources = _get_active_sources_for_metro(session, normalized_metro_id)
+    requested_source_ids = {
+        source_id.strip().upper()
+        for source_id in (source_ids or ())
+        if source_id and source_id.strip()
+    }
 
-    for source in _get_active_sources_for_metro(session, normalized_metro_id):
+    if requested_source_ids:
+        active_source_map = {source.source_id: source for source in active_sources}
+        sources: list[SourceCatalog] = []
+        for source_id in sorted(requested_source_ids):
+            source = active_source_map.get(source_id) or session.get(SourceCatalog, source_id)
+            if source is None:
+                cadence_window = _get_cadence_window("daily")
+                statuses.append(
+                    SourceFreshnessStatus(
+                        source_id=source_id,
+                        metro_id=normalized_metro_id,
+                        required=True,
+                        passed=False,
+                        freshness_code="MISSING_SOURCE",
+                        freshness_reason=(
+                            "The requested source is not configured in source_catalog."
+                        ),
+                        refresh_cadence="daily",
+                        max_age_hours=int(cadence_window.total_seconds() // 3600),
+                    )
+                )
+                continue
+            if (
+                not source.is_active
+                or not _source_covers_metro(session, source, normalized_metro_id)
+            ):
+                cadence_window = _get_cadence_window(source.refresh_cadence)
+                statuses.append(
+                    SourceFreshnessStatus(
+                        source_id=source.source_id,
+                        metro_id=normalized_metro_id,
+                        required=True,
+                        passed=False,
+                        freshness_code="MISSING_SOURCE",
+                        freshness_reason=(
+                            "The requested source is not active for the requested metro."
+                        ),
+                        refresh_cadence=source.refresh_cadence,
+                        max_age_hours=int(cadence_window.total_seconds() // 3600),
+                    )
+                )
+                continue
+            sources.append(source)
+    else:
+        sources = active_sources
+
+    for source in sources:
         cadence_window = _get_cadence_window(source.refresh_cadence)
         latest_snapshot = _get_latest_snapshot(session, source.source_id, normalized_metro_id)
         required = source.block_refresh
@@ -320,12 +424,13 @@ def _ingest_records(
     loaded_at: datetime | None,
     connector_key: str | None,
     processor: Any,
+    processor_kwargs: dict[str, Any] | None = None,
 ) -> SourceLoadReport:
     normalized_source_id = source_id.strip().upper()
     normalized_metro_id = _canonicalize_metro_id(metro_id)
     loaded_at = _coerce_timestamp(loaded_at)
     source = _get_source(session, normalized_source_id)
-    _assert_source_covers_metro(source, normalized_metro_id)
+    _assert_source_covers_metro(session, source, normalized_metro_id)
 
     checksum = _build_checksum(records)
     row_count = len(records)
@@ -349,12 +454,15 @@ def _ingest_records(
             metro_id=normalized_metro_id,
             snapshot=snapshot,
             records=list(records),
+            **(processor_kwargs or {}),
         )
         _persist_rejections(session, snapshot.snapshot_id, rejections)
 
         if rejections:
-            snapshot.status = SourceSnapshotStatus.QUARANTINED
-            snapshot.error_message = f"{len(rejections)} row(s) were quarantined during ingest."
+            snapshot.status, snapshot.error_message = _classify_snapshot_outcome(
+                row_count=row_count,
+                rejections=rejections,
+            )
 
         session.commit()
         return _to_load_report(snapshot, rejections)
@@ -382,6 +490,7 @@ def _process_parcel_records(
     metro_id: str,
     snapshot: SourceSnapshot,
     records: list[RecordPayload],
+    replace_existing_scope: str | None = None,
 ) -> list[RejectionDetail]:
     counties = _load_county_lookup(session, metro_id)
     seen_parcel_ids: set[str] = set()
@@ -434,19 +543,25 @@ def _process_parcel_records(
                 )
             )
 
+    normalized_replace_existing_scope = _normalize_parcel_replace_scope(
+        replace_existing_scope
+    )
+    if normalized_replace_existing_scope == "county_metro":
+        target_counties = sorted({row["county_fips"] for row in normalized_records})
+        if target_counties:
+            session.execute(
+                update(RawParcel)
+                .where(
+                    RawParcel.metro_id == metro_id,
+                    RawParcel.county_fips.in_(target_counties),
+                    RawParcel.is_active.is_(True),
+                )
+                .values(is_active=False)
+            )
+
     parcel_ids = [row["parcel_id"] for row in normalized_records]
-    existing_parcels = {
-        parcel.parcel_id: parcel
-        for parcel in session.scalars(
-            select(RawParcel).where(RawParcel.parcel_id.in_(parcel_ids))
-        ).all()
-    }
-    existing_rep_points = {
-        rep_point.parcel_id: rep_point
-        for rep_point in session.scalars(
-            select(ParcelRepPoint).where(ParcelRepPoint.parcel_id.in_(parcel_ids))
-        ).all()
-    }
+    existing_parcels = _load_existing_parcels_by_id(session, parcel_ids)
+    existing_rep_points = _load_existing_rep_points_by_id(session, parcel_ids)
 
     for row in normalized_records:
         parcel = existing_parcels.get(row["parcel_id"])
@@ -499,10 +614,12 @@ def _process_zoning_records(
     records: list[RecordPayload],
 ) -> list[RejectionDetail]:
     counties = _load_county_lookup(session, metro_id)
-    existing_parcels = {
-        parcel.parcel_id: parcel
-        for parcel in session.scalars(select(RawParcel).where(RawParcel.metro_id == metro_id)).all()
-    }
+    candidate_parcel_ids = [
+        parcel_id
+        for record in records
+        if (parcel_id := _safe_string(record.get("parcel_id"))) is not None
+    ]
+    existing_parcels = _load_existing_parcels_by_id(session, candidate_parcel_ids)
     seen_keys: set[str] = set()
     normalized_records: list[dict[str, str | None]] = []
     rejections: list[RejectionDetail] = []
@@ -554,12 +671,14 @@ def _process_zoning_records(
                 )
             )
 
-    for row in normalized_records:
+    for batch in _chunked_strings([row["parcel_id"] for row in normalized_records]):
         session.execute(
             update(RawZoning)
-            .where(RawZoning.parcel_id == row["parcel_id"], RawZoning.is_active.is_(True))
+            .where(RawZoning.parcel_id.in_(batch), RawZoning.is_active.is_(True))
             .values(is_active=False)
         )
+
+    for row in normalized_records:
         session.add(
             RawZoning(
                 parcel_id=row["parcel_id"],
@@ -581,37 +700,28 @@ def _process_evidence_records(
     metro_id: str,
     snapshot: SourceSnapshot,
     records: list[RecordPayload],
+    replace_existing_scope: str | None = None,
 ) -> list[RejectionDetail]:
-    counties = _load_county_lookup(session, metro_id)
+    counties: set[str] | None = None
     existing_parcels = {
         parcel.parcel_id: parcel
         for parcel in session.scalars(select(RawParcel).where(RawParcel.metro_id == metro_id)).all()
     }
-    seen_keys: set[tuple[str, str]] = set()
+    seen_records: dict[tuple[str, str], dict[str, str | None]] = {}
     normalized_records: list[dict[str, str | None]] = []
     rejections: list[RejectionDetail] = []
 
     for row_number, record in enumerate(records, start=1):
         record_key = _safe_string(record.get("record_key"))
-        attribute_name = _safe_string(record.get("attribute_name"))
-        dedupe_key = (record_key or "", attribute_name or "")
-        if record_key and attribute_name and dedupe_key in seen_keys:
-            rejections.append(
-                _build_rejection(
-                    row_number,
-                    "DUPLICATE_RECORD",
-                    "Duplicate evidence record_key and attribute_name found in the payload.",
-                    record_key,
-                    record,
-                )
-            )
-            continue
 
         try:
             county_fips = _safe_string(record.get("county_fips"))
             parcel_id = _safe_string(record.get("parcel_id"))
-            if county_fips and county_fips not in counties:
-                raise ValueError("county_fips is not mapped to the requested metro.")
+            if county_fips:
+                if counties is None:
+                    counties = _load_county_lookup(session, metro_id)
+                if county_fips not in counties:
+                    raise ValueError("county_fips is not mapped to the requested metro.")
             if parcel_id:
                 parcel = existing_parcels.get(parcel_id)
                 if parcel is None:
@@ -619,22 +729,35 @@ def _process_evidence_records(
                 if county_fips and parcel.county_fips != county_fips:
                     raise ValueError("parcel county_fips does not match the evidence payload.")
 
-            normalized_records.append(
-                {
-                    "record_key": _require_string(record, "record_key"),
-                    "attribute_name": _require_string(record, "attribute_name"),
-                    "attribute_value": _require_string(record, "attribute_value"),
-                    "lineage_key": _require_string(record, "lineage_key"),
-                    "county_fips": county_fips,
-                    "parcel_id": parcel_id,
-                }
+            normalized_record = {
+                "record_key": _require_string(record, "record_key"),
+                "attribute_name": _require_string(record, "attribute_name"),
+                "attribute_value": _require_string(record, "attribute_value"),
+                "lineage_key": _require_string(record, "lineage_key"),
+                "county_fips": county_fips,
+                "parcel_id": parcel_id,
+            }
+            dedupe_key = (
+                normalized_record["record_key"],
+                normalized_record["attribute_name"],
             )
-            seen_keys.add(
-                (
-                    _require_string(record, "record_key"),
-                    _require_string(record, "attribute_name"),
+            existing_record = seen_records.get(dedupe_key)
+            if existing_record is not None:
+                if _evidence_record_values_match(existing_record, normalized_record):
+                    continue
+                rejections.append(
+                    _build_rejection(
+                        row_number,
+                        "DUPLICATE_RECORD",
+                        "Conflicting evidence record_key and attribute_name found in the payload.",
+                        normalized_record["record_key"],
+                        record,
+                    )
                 )
-            )
+                continue
+
+            normalized_records.append(normalized_record)
+            seen_records[dedupe_key] = normalized_record
         except (KeyError, TypeError, ValueError) as exc:
             rejections.append(
                 _build_rejection(
@@ -646,18 +769,35 @@ def _process_evidence_records(
                 )
             )
 
-    for row in normalized_records:
+    normalized_replace_existing_scope = _normalize_replace_existing_scope(
+        replace_existing_scope
+    )
+    if normalized_replace_existing_scope == "source_metro" and (
+        normalized_records or not rejections
+    ):
         session.execute(
             update(SourceEvidence)
             .where(
                 SourceEvidence.source_id == snapshot.source_id,
                 SourceEvidence.metro_id == metro_id,
-                SourceEvidence.record_key == row["record_key"],
-                SourceEvidence.attribute_name == row["attribute_name"],
                 SourceEvidence.is_active.is_(True),
             )
             .values(is_active=False)
         )
+
+    for row in normalized_records:
+        if normalized_replace_existing_scope != "source_metro":
+            session.execute(
+                update(SourceEvidence)
+                .where(
+                    SourceEvidence.source_id == snapshot.source_id,
+                    SourceEvidence.metro_id == metro_id,
+                    SourceEvidence.record_key == row["record_key"],
+                    SourceEvidence.attribute_name == row["attribute_name"],
+                    SourceEvidence.is_active.is_(True),
+                )
+                .values(is_active=False)
+            )
         session.add(
             SourceEvidence(
                 source_id=snapshot.source_id,
@@ -676,11 +816,322 @@ def _process_evidence_records(
     return rejections
 
 
+def _process_market_listing_records(
+    session: Session,
+    metro_id: str,
+    snapshot: SourceSnapshot,
+    records: list[RecordPayload],
+    *,
+    listing_source_id: str,
+    replace_existing_scope: str | None = None,
+) -> list[RejectionDetail]:
+    normalized_listing_source_id = _get_listing_source(
+        session,
+        _require_non_empty_identifier(listing_source_id, "listing_source_id"),
+    ).listing_source_id
+    counties: set[str] | None = None
+    existing_parcels = {
+        parcel.parcel_id: parcel
+        for parcel in session.scalars(select(RawParcel).where(RawParcel.metro_id == metro_id)).all()
+    }
+    seen_records: dict[str, dict[str, Any]] = {}
+    normalized_records: list[dict[str, Any]] = []
+    rejections: list[RejectionDetail] = []
+
+    for row_number, record in enumerate(records, start=1):
+        source_listing_key = _safe_string(record.get("source_listing_key"))
+
+        try:
+            county_fips = _safe_string(record.get("county_fips"))
+            parcel_id = _safe_string(record.get("parcel_id"))
+            if county_fips:
+                if counties is None:
+                    counties = _load_county_lookup(session, metro_id)
+                if county_fips not in counties:
+                    raise ValueError("county_fips is not mapped to the requested metro.")
+            if parcel_id:
+                parcel = existing_parcels.get(parcel_id)
+                if parcel is None:
+                    raise ValueError("parcel_id does not exist in canonical parcel storage.")
+                if county_fips and parcel.county_fips != county_fips:
+                    raise ValueError("parcel county_fips does not match the listing payload.")
+
+            normalized_record = {
+                "source_listing_key": _require_string(record, "source_listing_key"),
+                "listing_title": _require_string(record, "listing_title"),
+                "source_url": _require_string(record, "source_url"),
+                "lineage_key": _require_string(record, "lineage_key"),
+                "county_fips": county_fips,
+                "parcel_id": parcel_id,
+                "asset_type": _normalize_optional_lower_string(record.get("asset_type")),
+                "listing_status": _normalize_optional_lower_string(record.get("listing_status")),
+                "asking_price": _coerce_optional_decimal(
+                    record.get("asking_price"),
+                    field_name="asking_price",
+                    minimum=Decimal("0"),
+                ),
+                "acreage": _coerce_optional_decimal(
+                    record.get("acreage"),
+                    field_name="acreage",
+                    minimum=Decimal("0"),
+                ),
+                "building_sqft": _coerce_optional_decimal(
+                    record.get("building_sqft"),
+                    field_name="building_sqft",
+                    minimum=Decimal("0"),
+                ),
+                "address_line1": _safe_string(record.get("address_line1")),
+                "city": _safe_string(record.get("city")),
+                "state_code": _normalize_optional_upper_string(record.get("state_code")),
+                "postal_code": _safe_string(record.get("postal_code")),
+                "latitude": _coerce_optional_decimal(
+                    record.get("latitude"),
+                    field_name="latitude",
+                    minimum=Decimal("-90"),
+                    maximum=Decimal("90"),
+                ),
+                "longitude": _coerce_optional_decimal(
+                    record.get("longitude"),
+                    field_name="longitude",
+                    minimum=Decimal("-180"),
+                    maximum=Decimal("180"),
+                ),
+                "broker_name": _safe_string(record.get("broker_name")),
+                "last_verified_at": _coerce_optional_datetime(
+                    record.get("last_verified_at"),
+                    field_name="last_verified_at",
+                ),
+            }
+            existing_record = seen_records.get(normalized_record["source_listing_key"])
+            if existing_record is not None:
+                if _market_listing_record_values_match(existing_record, normalized_record):
+                    continue
+                rejections.append(
+                    _build_rejection(
+                        row_number,
+                        "DUPLICATE_RECORD",
+                        "Conflicting market listing key found in the payload.",
+                        normalized_record["source_listing_key"],
+                        record,
+                    )
+                )
+                continue
+
+            normalized_records.append(normalized_record)
+            seen_records[normalized_record["source_listing_key"]] = normalized_record
+        except (KeyError, TypeError, ValueError) as exc:
+            rejections.append(
+                _build_rejection(
+                    row_number,
+                    "VALIDATION_FAILURE",
+                    str(exc),
+                    source_listing_key,
+                    record,
+                )
+            )
+
+    normalized_replace_existing_scope = _normalize_market_listing_replace_scope(
+        replace_existing_scope
+    )
+    if normalized_replace_existing_scope == "listing_source_metro" and (
+        normalized_records or not rejections
+    ):
+        session.execute(
+            update(MarketListing)
+            .where(
+                MarketListing.listing_source_id == normalized_listing_source_id,
+                MarketListing.metro_id == metro_id,
+                MarketListing.is_active.is_(True),
+            )
+            .values(is_active=False)
+        )
+
+    for row in normalized_records:
+        if normalized_replace_existing_scope != "listing_source_metro":
+            session.execute(
+                update(MarketListing)
+                .where(
+                    MarketListing.listing_source_id == normalized_listing_source_id,
+                    MarketListing.metro_id == metro_id,
+                    MarketListing.source_listing_key == row["source_listing_key"],
+                    MarketListing.is_active.is_(True),
+                )
+                .values(is_active=False)
+            )
+        session.add(
+            MarketListing(
+                source_id=snapshot.source_id,
+                listing_source_id=normalized_listing_source_id,
+                metro_id=metro_id,
+                county_fips=row["county_fips"],
+                parcel_id=row["parcel_id"],
+                source_snapshot_id=snapshot.snapshot_id,
+                source_listing_key=row["source_listing_key"],
+                listing_title=row["listing_title"],
+                asset_type=row["asset_type"],
+                listing_status=row["listing_status"],
+                asking_price=row["asking_price"],
+                acreage=row["acreage"],
+                building_sqft=row["building_sqft"],
+                address_line1=row["address_line1"],
+                city=row["city"],
+                state_code=row["state_code"],
+                postal_code=row["postal_code"],
+                latitude=row["latitude"],
+                longitude=row["longitude"],
+                broker_name=row["broker_name"],
+                source_url=row["source_url"],
+                last_verified_at=row["last_verified_at"],
+                lineage_key=row["lineage_key"],
+                is_active=True,
+            )
+        )
+
+    return rejections
+
+
+def _classify_snapshot_outcome(
+    *,
+    row_count: int,
+    rejections: Sequence[RejectionDetail],
+) -> tuple[SourceSnapshotStatus, str]:
+    rejection_count = len(rejections)
+    if rejection_count == 0:
+        return SourceSnapshotStatus.SUCCESS, ""
+
+    rejection_codes = {
+        rejection.rejection_code
+        for rejection in rejections
+        if rejection.rejection_code
+    }
+    rejection_rate = rejection_count / max(row_count, 1)
+    code_summary = _summarize_rejection_codes(rejections)
+
+    if rejection_codes and rejection_codes.issubset(_BENIGN_REJECTION_CODES):
+        return (
+            SourceSnapshotStatus.SUCCESS,
+            f"{rejection_count} duplicate row(s) were skipped during ingest.",
+        )
+
+    if row_count > 0 and rejection_rate <= _MINOR_REJECTION_RATE_SUCCESS_THRESHOLD:
+        return (
+            SourceSnapshotStatus.SUCCESS,
+            f"{rejection_count} row(s) were skipped during ingest ({code_summary}).",
+        )
+
+    return (
+        SourceSnapshotStatus.QUARANTINED,
+        f"{rejection_count} row(s) were quarantined during ingest ({code_summary}).",
+    )
+
+
+def _summarize_rejection_codes(rejections: Sequence[RejectionDetail]) -> str:
+    counts = Counter(
+        rejection.rejection_code or "UNKNOWN"
+        for rejection in rejections
+    )
+    return ", ".join(
+        f"{code.lower()}={count}"
+        for code, count in sorted(counts.items())
+    )
+
+
+def _normalize_replace_existing_scope(replace_existing_scope: str | None) -> str | None:
+    if replace_existing_scope is None:
+        return None
+
+    normalized_scope = replace_existing_scope.strip().lower()
+    if not normalized_scope:
+        return None
+    if normalized_scope == "source_metro":
+        return normalized_scope
+
+    raise ValueError(
+        "Unsupported evidence replacement scope. Expected one of: source_metro."
+    )
+
+
+def _normalize_parcel_replace_scope(replace_existing_scope: str | None) -> str | None:
+    if replace_existing_scope is None:
+        return None
+
+    normalized_scope = replace_existing_scope.strip().lower()
+    if not normalized_scope:
+        return None
+    if normalized_scope == "county_metro":
+        return normalized_scope
+
+    raise ValueError(
+        "Unsupported parcel replacement scope. Expected one of: county_metro."
+    )
+
+
+def _normalize_market_listing_replace_scope(replace_existing_scope: str | None) -> str | None:
+    if replace_existing_scope is None:
+        return None
+
+    normalized_scope = replace_existing_scope.strip().lower()
+    if not normalized_scope:
+        return None
+    if normalized_scope == "listing_source_metro":
+        return normalized_scope
+
+    raise ValueError(
+        "Unsupported market listing replacement scope. Expected one of: listing_source_metro."
+    )
+
+
+def _evidence_record_values_match(
+    existing_record: dict[str, str | None],
+    candidate_record: dict[str, str | None],
+) -> bool:
+    return (
+        existing_record["attribute_value"] == candidate_record["attribute_value"]
+        and existing_record["county_fips"] == candidate_record["county_fips"]
+        and existing_record["parcel_id"] == candidate_record["parcel_id"]
+    )
+
+
+def _market_listing_record_values_match(
+    existing_record: dict[str, Any],
+    candidate_record: dict[str, Any],
+) -> bool:
+    compared_fields = (
+        "listing_title",
+        "source_url",
+        "county_fips",
+        "parcel_id",
+        "asset_type",
+        "listing_status",
+        "asking_price",
+        "acreage",
+        "building_sqft",
+        "address_line1",
+        "city",
+        "state_code",
+        "postal_code",
+        "latitude",
+        "longitude",
+        "broker_name",
+        "last_verified_at",
+    )
+    return all(existing_record[field] == candidate_record[field] for field in compared_fields)
+
+
 def _get_source(session: Session, source_id: str) -> SourceCatalog:
     source = session.scalar(select(SourceCatalog).where(SourceCatalog.source_id == source_id))
     if source is None or not source.is_active:
         raise SourceConfigurationError(f"Source `{source_id}` is not active in the source catalog.")
     return source
+
+
+def _get_listing_source(session: Session, listing_source_id: str) -> ListingSourceCatalog:
+    listing_source = session.get(ListingSourceCatalog, listing_source_id)
+    if listing_source is None or not listing_source.is_active:
+        raise SourceConfigurationError(
+            f"Listing source `{listing_source_id}` is not active in the listing source catalog."
+        )
+    return listing_source
 
 
 def _get_active_sources_for_metro(session: Session, metro_id: str) -> list[SourceCatalog]:
@@ -692,7 +1143,7 @@ def _get_active_sources_for_metro(session: Session, metro_id: str) -> list[Sourc
     return [
         source
         for source in sources
-        if metro_id in _split_metro_coverage(source.metro_coverage)
+        if _source_covers_metro(session, source, metro_id)
     ]
 
 
@@ -703,21 +1154,36 @@ def _get_latest_snapshot(
     *,
     connector_key: str | None = None,
 ) -> SourceSnapshot | None:
+    latest_snapshot_ordering = (
+        SourceSnapshot.created_at.desc(),
+        SourceSnapshot.snapshot_ts.desc(),
+    )
     statement = select(SourceSnapshot).where(
         SourceSnapshot.source_id == source_id,
         SourceSnapshot.metro_id == metro_id,
     )
     if connector_key is None:
-        statement = statement.order_by(SourceSnapshot.snapshot_ts.desc()).limit(1)
-    else:
-        statement = statement.where(SourceSnapshot.connector_key == connector_key).order_by(
-            SourceSnapshot.snapshot_ts.desc()
-        ).limit(1)
+        snapshot = session.scalar(statement.order_by(*latest_snapshot_ordering).limit(1))
+        if snapshot is not None or metro_id == "TX" or not _is_texas_metro(session, metro_id):
+            return snapshot
+        fallback_statement = select(SourceSnapshot).where(
+            SourceSnapshot.source_id == source_id,
+            SourceSnapshot.metro_id == "TX",
+        )
+        return session.scalar(fallback_statement.order_by(*latest_snapshot_ordering).limit(1))
+
+    statement = statement.where(SourceSnapshot.connector_key == connector_key).order_by(
+        *latest_snapshot_ordering
+    ).limit(1)
     return session.scalar(statement)
 
 
-def _assert_source_covers_metro(source: SourceCatalog, metro_id: str) -> None:
-    if metro_id not in _split_metro_coverage(source.metro_coverage):
+def _assert_source_covers_metro(
+    session: Session,
+    source: SourceCatalog,
+    metro_id: str,
+) -> None:
+    if not _source_covers_metro(session, source, metro_id):
         raise SourceConfigurationError(
             f"Source `{source.source_id}` is not configured for metro `{metro_id}`."
         )
@@ -729,6 +1195,20 @@ def _split_metro_coverage(metro_coverage: str | None) -> list[str]:
     return [metro.strip().upper() for metro in metro_coverage.split(",") if metro.strip()]
 
 
+def _source_covers_metro(session: Session, source: SourceCatalog, metro_id: str) -> bool:
+    coverage = set(_split_metro_coverage(source.metro_coverage))
+    if metro_id in coverage:
+        return True
+    return "TX" in coverage and metro_id != "TX" and _is_texas_metro(session, metro_id)
+
+
+def _is_texas_metro(session: Session, metro_id: str) -> bool:
+    metro = session.get(MetroCatalog, metro_id)
+    if metro is None:
+        return False
+    return metro.state_code.strip().upper() == "TX"
+
+
 def _load_county_lookup(session: Session, metro_id: str) -> set[str]:
     counties = session.scalars(
         select(CountyCatalog.county_fips).where(CountyCatalog.metro_id == metro_id)
@@ -736,6 +1216,47 @@ def _load_county_lookup(session: Session, metro_id: str) -> set[str]:
     if not counties:
         raise SourceConfigurationError(f"Metro `{metro_id}` has no county mapping in the catalog.")
     return set(counties)
+
+
+def _chunked_strings(
+    values: Sequence[str],
+    *,
+    batch_size: int = QUERY_BATCH_SIZE,
+) -> list[list[str]]:
+    if batch_size <= 0:
+        raise ValueError("batch_size must be greater than zero.")
+
+    deduplicated_values = list(dict.fromkeys(values))
+    return [
+        deduplicated_values[index : index + batch_size]
+        for index in range(0, len(deduplicated_values), batch_size)
+    ]
+
+
+def _load_existing_parcels_by_id(
+    session: Session,
+    parcel_ids: Sequence[str],
+) -> dict[str, RawParcel]:
+    existing_parcels: dict[str, RawParcel] = {}
+    for batch in _chunked_strings(parcel_ids):
+        for parcel in session.scalars(
+            select(RawParcel).where(RawParcel.parcel_id.in_(batch))
+        ).all():
+            existing_parcels[parcel.parcel_id] = parcel
+    return existing_parcels
+
+
+def _load_existing_rep_points_by_id(
+    session: Session,
+    parcel_ids: Sequence[str],
+) -> dict[str, ParcelRepPoint]:
+    existing_rep_points: dict[str, ParcelRepPoint] = {}
+    for batch in _chunked_strings(parcel_ids):
+        for rep_point in session.scalars(
+            select(ParcelRepPoint).where(ParcelRepPoint.parcel_id.in_(batch))
+        ).all():
+            existing_rep_points[rep_point.parcel_id] = rep_point
+    return existing_rep_points
 
 
 def _persist_rejections(
@@ -841,7 +1362,46 @@ def _coerce_decimal(value: Any) -> Decimal:
 
     if decimal_value < 0:
         raise ValueError("acreage must be greater than or equal to zero.")
+    if decimal_value > RAW_PARCEL_ACREAGE_MAX:
+        raise ValueError("acreage exceeds storage limits for canonical parcel rows.")
     return decimal_value
+
+
+def _coerce_optional_decimal(
+    value: Any,
+    *,
+    field_name: str,
+    minimum: Decimal | None = None,
+    maximum: Decimal | None = None,
+) -> Decimal | None:
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        decimal_value = Decimal(str(value))
+    except (InvalidOperation, TypeError) as exc:
+        raise ValueError(f"{field_name} must be numeric.") from exc
+    if minimum is not None and decimal_value < minimum:
+        raise ValueError(f"{field_name} must be greater than or equal to {minimum}.")
+    if maximum is not None and decimal_value > maximum:
+        raise ValueError(f"{field_name} must be less than or equal to {maximum}.")
+    return decimal_value
+
+
+def _coerce_optional_datetime(
+    value: Any,
+    *,
+    field_name: str,
+) -> datetime | None:
+    if value is None or str(value).strip() == "":
+        return None
+    if isinstance(value, datetime):
+        return _coerce_timestamp(value)
+    try:
+        normalized = str(value).strip().replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an ISO-8601 timestamp.") from exc
+    return _coerce_timestamp(parsed)
 
 
 def _require_string(record: RecordPayload, key: str) -> str:
@@ -856,6 +1416,23 @@ def _safe_string(value: Any) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _normalize_optional_lower_string(value: Any) -> str | None:
+    normalized = _safe_string(value)
+    return normalized.lower() if normalized is not None else None
+
+
+def _normalize_optional_upper_string(value: Any) -> str | None:
+    normalized = _safe_string(value)
+    return normalized.upper() if normalized is not None else None
+
+
+def _require_non_empty_identifier(value: str, field_name: str) -> str:
+    normalized = value.strip().lower()
+    if not normalized:
+        raise SourceConfigurationError(f"{field_name} is required.")
+    return normalized
 
 
 def _canonicalize_metro_id(metro_id: str) -> str:

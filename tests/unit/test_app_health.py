@@ -1,3 +1,5 @@
+import re
+
 from fastapi import status
 from fastapi.testclient import TestClient
 
@@ -8,6 +10,9 @@ from app.main import app
 def test_dashboard_requires_authenticated_viewer_headers() -> None:
     client = TestClient(app)
     response = client.get("/")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    response = client.get("/dashboard/contenders")
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     response = client.get("/dashboard/summary")
@@ -24,10 +29,58 @@ def test_dashboard_landing_page_returns_private_client_shell(
     assert "Texas Private Client Siting Portal" in response.text
     assert "Private Texas Client Intelligence Portal" in response.text
     assert "Texas Opportunity Catalogue" in response.text
-    assert "Plano North Utility Belt" in response.text
-    assert "Katy West Power Exchange" in response.text
+    assert "watchlist" in response.text
+    assert "Open contender board" in response.text
+    assert "Open live JSON" in response.text
+    assert 'href="/dashboard/contenders"' in response.text
     assert 'href="/dashboard/summary"' in response.text
     assert 'href="/health"' in response.text
+
+
+def test_dashboard_contenders_page_returns_top_50_board(
+    reader_headers: dict[str, str],
+) -> None:
+    client = TestClient(app)
+    response = client.get("/dashboard/contenders", headers=reader_headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Texas Top " in response.text
+    assert "Major Metro Contender Board" in response.text
+    assert "Open contender board" in response.text
+    assert "Main portal" in response.text
+    assert "Live JSON" in response.text
+    assert "Approval" in response.text
+    assert 'href="/dashboard/contenders/' in response.text
+    assert 'data-href="/dashboard/contenders/' in response.text
+    assert 'href="/"' in response.text
+    assert 'href="/dashboard/summary"' in response.text
+
+
+def test_dashboard_contender_detail_page_returns_full_explanation(
+    reader_headers: dict[str, str],
+) -> None:
+    client = TestClient(app)
+    board_response = client.get("/dashboard/contenders", headers=reader_headers)
+    assert board_response.status_code == 200
+    match = re.search(r'href="(/dashboard/contenders/[^"]+)"', board_response.text)
+    assert match is not None
+
+    response = client.get(match.group(1), headers=reader_headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Comprehensive explanation" in response.text
+    assert "Decision Lens" in response.text
+    assert "Scoring Anatomy" in response.text
+    assert "Approval Path" in response.text
+    assert "Recommended Diligence Path" in response.text
+    assert "Nearby Board Comparisons" in response.text
+    assert "Review decision lens" in response.text
+    assert "quick-nav" in response.text
+    assert "Top 136 client dossier" in response.text
+    assert "Executive Briefing Memo" in response.text
+    assert "Risk And Mitigation Read" in response.text
+    assert "Client Call Questions" in response.text
+    assert "Pursuit Workplan" in response.text
 
 
 def test_dashboard_summary_returns_texas_opportunity_catalog(
@@ -40,18 +93,43 @@ def test_dashboard_summary_returns_texas_opportunity_catalog(
     assert payload["app_name"] == "dense-data-center-locator"
     assert payload["display_name"] == "Texas Private Client Siting Portal"
     assert payload["market"] == "Texas"
-    assert payload["data_mode"] == "seeded_catalog"
-    assert payload["opportunity_count"] == 50
-    assert payload["corridor_count"] == 12
+    assert payload["data_mode"] in {"seeded_catalog", "live_candidate_scoring"}
+    assert payload["opportunity_count"] >= 50
     assert len(payload["featured_opportunities"]) == 6
-    assert len(payload["opportunities"]) == 50
-    assert any(item["metro"] == "Dallas-Fort Worth" for item in payload["opportunities"])
-    assert any(
-        item["university_anchor"] == "University of Texas at Austin"
-        for item in payload["opportunities"]
-    )
+    assert len(payload["opportunities"]) == payload["opportunity_count"]
     assert payload["data_coverage"]["available"] is True
     assert payload["data_coverage"]["total_sources"] == 51
+    assert any(item["metro"] for item in payload["opportunities"])
+    assert any(item["university_anchor"] for item in payload["opportunities"])
+    assert all("social_score" in item for item in payload["opportunities"])
+    assert all("political_score" in item for item in payload["opportunities"])
+    assert all("approval_score" in item for item in payload["opportunities"])
+    assert all(item["approval_stage"] for item in payload["opportunities"])
+    assert all(isinstance(item["approval_headwinds"], list) for item in payload["opportunities"])
+    assert payload["corridor_count"] >= 1
+    if payload["data_mode"] == "seeded_catalog":
+        assert payload["opportunity_count"] == 50
+        assert any(
+            item["site_name"] == "Plano North Utility Belt"
+            for item in payload["opportunities"]
+        )
+    else:
+        assert 60 <= payload["opportunity_count"] <= 150
+        assert payload["hero_title"].startswith(
+            f"{payload['opportunity_count']} live-ranked Texas opportunities"
+        )
+        assert any(item["confidence_score"] is not None for item in payload["opportunities"])
+        counts: dict[str, int] = {}
+        for item in payload["opportunities"]:
+            counts[item["metro"]] = counts.get(item["metro"], 0) + 1
+        assert counts.get("Dallas-Fort Worth", 0) >= 30
+        assert counts.get("Houston", 0) >= 25
+        assert counts.get("San Antonio", 0) >= 25
+        for metro_name in ("Austin", "Brazos Valley", "El Paso", "Rio Grande Valley"):
+            assert counts.get(metro_name, 0) >= 12
+        assert counts.get("Austin", 0) <= 20
+        assert counts.get("Houston", 0) <= 25
+        assert counts.get("San Antonio", 0) <= 25
 
 
 def test_dashboard_summary_includes_live_monitoring_snapshot(monkeypatch) -> None:

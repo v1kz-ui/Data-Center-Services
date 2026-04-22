@@ -11,6 +11,7 @@ from app.db.models.catalogs import (
     SourceCatalog,
     SourceInterface,
 )
+from app.db.models.market import ListingSourceCatalog
 from app.db.models.territory import CountyCatalog, MetroCatalog
 from app.services.reference_seeds import load_reference_seed_bundle
 
@@ -24,6 +25,7 @@ def _seed_row_counts(seed_dir: Path) -> dict[str, int]:
         "metro_catalog": _count("metro_catalog.csv"),
         "county_catalog": _count("county_catalog.csv"),
         "source_catalog": _count("source_catalog.csv"),
+        "listing_source_catalog": _count("listing_source_catalog.csv"),
         "source_interface": _count("source_interface.csv"),
         "factor_catalog": _count("factor_catalog.csv"),
         "bonus_catalog": _count("bonus_catalog.csv"),
@@ -43,6 +45,10 @@ def test_reference_seed_loader_populates_controlled_bundle(db_session) -> None:
     assert len(db_session.scalars(select(MetroCatalog)).all()) == expected_counts["metro_catalog"]
     assert len(db_session.scalars(select(CountyCatalog)).all()) == expected_counts["county_catalog"]
     assert len(db_session.scalars(select(SourceCatalog)).all()) == expected_counts["source_catalog"]
+    assert (
+        len(db_session.scalars(select(ListingSourceCatalog)).all())
+        == expected_counts["listing_source_catalog"]
+    )
     assert len(db_session.scalars(select(SourceInterface)).all()) == expected_counts["source_interface"]
     assert len(db_session.scalars(select(FactorCatalog)).all()) == expected_counts["factor_catalog"]
     assert len(db_session.scalars(select(BonusCatalog)).all()) == expected_counts["bonus_catalog"]

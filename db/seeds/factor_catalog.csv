@@ -1,12 +1,12 @@
 factor_id,display_name,description,ordinal,is_active
-F01,Factor 01,Placeholder definition for factor F01,1,true
-F02,Factor 02,Placeholder definition for factor F02,2,true
-F03,Factor 03,Placeholder definition for factor F03,3,true
-F04,Factor 04,Placeholder definition for factor F04,4,true
-F05,Factor 05,Placeholder definition for factor F05,5,true
-F06,Factor 06,Placeholder definition for factor F06,6,true
-F07,Factor 07,Placeholder definition for factor F07,7,true
-F08,Factor 08,Placeholder definition for factor F08,8,true
-F09,Factor 09,Placeholder definition for factor F09,9,true
-F10,Factor 10,Placeholder definition for factor F10,10,true
+F01,Power access,Nearest substation proximity plus nearby generation strength for first-wave data-center deployment.,1,true
+F02,Fiber connectivity proxy,Peering facility distance and network density proxy for regional carrier access.,2,true
+F03,Flood and hazard risk,FEMA National Risk Index resilience and loss proxy anchored to the best-matching metro county.,3,true
+F04,Site-size fit,Favors 1 to 3 acre sites and practical building footprints while tapering oversized tracts.,4,true
+F05,Land-use fit,Listing asset-type and title-language suitability for industrial and data-center use.,5,true
+F06,Water availability proxy,Water-monitoring proximity blended with municipal access proxy.,6,true
+F07,Environmental constraint proxy,Penalty-aware environmental suitability using public contamination and constraint signals.,7,true
+F08,Metro population access,Rewards closer access to major metro population anchors and research talent pools.,8,true
+F09,Highway logistics access,Measures proximity to major highway corridors for equipment and construction logistics.,9,true
+F10,Market economics,Blends price-per-acre context with metro-scale attractiveness for near-term execution.,10,true
 

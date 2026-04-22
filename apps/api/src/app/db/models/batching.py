@@ -15,7 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.db.models.enums import ScoreBatchStatus, ScoreRunStatus
+from app.db.models.enums import ScoreBatchStatus, ScoreRunStatus, enum_values
 from app.db.models.mixins import TimestampMixin
 
 
@@ -38,7 +38,11 @@ class ScoreBatch(TimestampMixin, Base):
 
     batch_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     status: Mapped[ScoreBatchStatus] = mapped_column(
-        Enum(ScoreBatchStatus, name="score_batch_status"),
+        Enum(
+            ScoreBatchStatus,
+            name="score_batch_status",
+            values_callable=enum_values,
+        ),
         nullable=False,
         default=ScoreBatchStatus.BUILDING,
     )
@@ -67,7 +71,11 @@ class ScoreRun(TimestampMixin, Base):
     metro_id: Mapped[str] = mapped_column(String(64), nullable=False)
     profile_name: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[ScoreRunStatus] = mapped_column(
-        Enum(ScoreRunStatus, name="score_run_status"),
+        Enum(
+            ScoreRunStatus,
+            name="score_run_status",
+            values_callable=enum_values,
+        ),
         nullable=False,
         default=ScoreRunStatus.RUNNING,
     )

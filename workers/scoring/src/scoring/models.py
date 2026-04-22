@@ -16,6 +16,8 @@ class EvidenceQualityWeights:
 @dataclass(slots=True)
 class ScoringPolicy:
     profile_name: str | None = None
+    freshness_source_ids: tuple[str, ...] = ()
+    skip_freshness_gate: bool = False
     restart_failed_run: bool = True
     allow_completed_run_rerun: bool = True
     evidence_quality_weights: EvidenceQualityWeights = field(

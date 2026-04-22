@@ -16,6 +16,7 @@ from app.db.models.catalogs import (
     SourceCatalog,
     SourceInterface,
 )
+from app.db.models.market import ListingSourceCatalog
 from app.db.models.enums import ScoringProfileStatus
 from app.db.models.territory import CountyCatalog, MetroCatalog
 
@@ -62,6 +63,7 @@ def load_reference_seed_bundle(
         _load_metro_catalog(session, resolved_seed_dir / "metro_catalog.csv"),
         _load_county_catalog(session, resolved_seed_dir / "county_catalog.csv"),
         _load_source_catalog(session, resolved_seed_dir / "source_catalog.csv"),
+        _load_listing_source_catalog(session, resolved_seed_dir / "listing_source_catalog.csv"),
         _load_source_interface(session, resolved_seed_dir / "source_interface.csv"),
         _load_factor_catalog(session, resolved_seed_dir / "factor_catalog.csv"),
         _load_bonus_catalog(session, resolved_seed_dir / "bonus_catalog.csv"),
@@ -124,6 +126,25 @@ def _load_source_catalog(session: Session, path: Path) -> SeedEntityResult:
         source.metro_coverage = row["metro_coverage"] or None
         source.target_table_name = row["target_table_name"]
         source.is_active = _parse_bool(row["is_active"])
+        _track_change(result, is_new)
+    return result
+
+
+def _load_listing_source_catalog(session: Session, path: Path) -> SeedEntityResult:
+    result = SeedEntityResult(entity="listing_source_catalog")
+    for row in _read_csv_rows(path):
+        listing_source = session.get(ListingSourceCatalog, row["listing_source_id"])
+        is_new = listing_source is None
+        if listing_source is None:
+            listing_source = ListingSourceCatalog(listing_source_id=row["listing_source_id"])
+            session.add(listing_source)
+        listing_source.display_name = row["display_name"]
+        listing_source.acquisition_method = row["acquisition_method"]
+        listing_source.base_url = row["base_url"] or None
+        listing_source.terms_url = row["terms_url"] or None
+        listing_source.allows_scraping = _parse_bool(row["allows_scraping"])
+        listing_source.compliance_notes = row["compliance_notes"] or None
+        listing_source.is_active = _parse_bool(row["is_active"])
         _track_change(result, is_new)
     return result
 

@@ -20,15 +20,22 @@ def test_connector_definition_endpoint_exposes_pilot_connectors(
 
     response = client.get("/admin/connectors/definitions")
     payload = response.json()
+    connector_keys = {item["connector_key"] for item in payload}
 
     assert response.status_code == 200
-    assert {item["connector_key"] for item in payload} == {
+    assert len(payload) > 50
+    assert {
         "dfw_dallas_arcgis_parcels_live",
         "dfw_dallas_arcgis_zoning_live",
         "dfw_fort_worth_arcgis_zoning_live",
         "dfw_parcel_pilot",
         "dfw_zoning_pilot",
-    }
+    }.issubset(connector_keys)
+    assert any(item["inventory_if_codes"] == ["IF-001"] for item in payload)
+    assert any(item["inventory_if_codes"] == ["IF-029"] for item in payload)
+    san_antonio_zoning_definition = next(
+        item for item in payload if item["inventory_if_codes"] == ["IF-046"]
+    )
     live_parcel_definition = next(
         item for item in payload if item["connector_key"] == "dfw_dallas_arcgis_parcels_live"
     )
@@ -39,6 +46,7 @@ def test_connector_definition_endpoint_exposes_pilot_connectors(
     assert live_parcel_definition["priority"] == 10
     assert fort_worth_zoning_definition["inventory_if_codes"] == ["IF-045"]
     assert fort_worth_zoning_definition["preprocess_strategy"] == "zoning_overlay_to_parcels"
+    assert san_antonio_zoning_definition["metro_id"] == "SAT"
 
 
 def test_due_connector_refresh_endpoint_loads_fixture_data_and_supports_parcel_search(
@@ -73,7 +81,10 @@ def test_manual_connector_refresh_updates_refresh_plan(
 
     refresh_response = client.post("/admin/connectors/PARCEL/metros/DFW/refresh")
     refresh_payload = refresh_response.json()
-    plan_response = client.get("/admin/connectors/refresh-plan")
+    plan_response = client.get(
+        "/admin/connectors/refresh-plan",
+        params={"as_of": "2026-04-18T12:00:00Z"},
+    )
     plan_payload = plan_response.json()
     parcel_item = next(
         item for item in plan_payload if item["connector_key"] == "dfw_parcel_pilot"

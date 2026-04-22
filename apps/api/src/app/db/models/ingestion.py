@@ -8,7 +8,7 @@ from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, Integ
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.db.models.enums import SourceSnapshotStatus
+from app.db.models.enums import SourceSnapshotStatus, enum_values
 from app.db.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
@@ -44,7 +44,11 @@ class SourceSnapshot(TimestampMixin, Base):
     row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     checksum: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[SourceSnapshotStatus] = mapped_column(
-        Enum(SourceSnapshotStatus, name="source_snapshot_status"),
+        Enum(
+            SourceSnapshotStatus,
+            name="source_snapshot_status",
+            values_callable=enum_values,
+        ),
         nullable=False,
         default=SourceSnapshotStatus.SUCCESS,
     )
