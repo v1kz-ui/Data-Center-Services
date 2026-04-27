@@ -381,6 +381,95 @@ _PREMIUM_SHARED_CSS = """
             font: 600 0.95rem var(--font-sans) !important;
           }
 
+          .sort-button {
+            border: 0;
+            background: transparent;
+            color: inherit;
+            padding: 0;
+            font: inherit;
+            text-transform: inherit;
+            cursor: pointer;
+          }
+
+          .sort-button::after {
+            content: " sort";
+            margin-left: 6px;
+            color: rgba(8, 22, 42, 0.38);
+          }
+
+          .compare-checkbox {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--gold);
+          }
+
+          .compare-tray {
+            display: grid;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 16px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(255, 253, 247, 0.92);
+          }
+
+          .compare-tray > div:first-child {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            color: var(--muted);
+          }
+
+          .compare-tray strong {
+            color: var(--ink);
+          }
+
+          .compare-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+          }
+
+          .compare-card {
+            display: grid;
+            gap: 7px;
+            padding: 12px;
+            border: 1px solid rgba(8, 22, 42, 0.12);
+            border-radius: 8px;
+            background: rgba(247, 239, 224, 0.68);
+          }
+
+          .compare-card span,
+          .compare-card small {
+            color: var(--muted);
+          }
+
+          .evidence-card-grid {
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+          }
+
+          .evidence-card b {
+            color: var(--gold);
+            font: 700 0.9rem var(--font-mono);
+          }
+
+          .evidence-card ul {
+            margin: 0;
+            padding-left: 18px;
+            color: var(--muted);
+            line-height: 1.55;
+          }
+
+          .evidence-caveat {
+            margin: 0;
+            color: var(--rust) !important;
+            font-size: 0.92rem;
+          }
+
+          .infrastructure-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+          }
+
           .footer-bar {
             font-family: var(--font-mono);
             letter-spacing: 0;
@@ -396,12 +485,44 @@ _PREMIUM_SHARED_CSS = """
             h2 {
               font-size: 1.72rem;
             }
+
+            .compare-grid,
+            .infrastructure-grid {
+              grid-template-columns: 1fr;
+            }
           }
 
           @media (max-width: 520px) {
             h1,
             .hero-copy h1 {
               font-size: 2.45rem !important;
+            }
+          }
+
+          @media print {
+            body {
+              background: white !important;
+              padding: 0 !important;
+            }
+
+            .top-nav,
+            .quick-nav,
+            .hero-actions,
+            .footer-bar,
+            .compare-tray {
+              display: none !important;
+            }
+
+            .page-shell,
+            .panel,
+            .detail-hero,
+            .metric-card,
+            .decision-card,
+            .dossier-card,
+            .risk-card,
+            .timeline-step,
+            .evidence-row {
+              box-shadow: none !important;
             }
           }
 """
@@ -693,6 +814,41 @@ def _format_money(value: Any) -> str:
     return f"${amount:,.0f}"
 
 
+def _format_money_per_acre(value: Any) -> str:
+    label = _format_money(value)
+    if label == "Not disclosed":
+        return label
+    return f"{label}/acre"
+
+
+def _format_snapshot_date(value: Any) -> str:
+    if value in {None, ""}:
+        return "Snapshot date unavailable"
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return str(value)
+    return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}"
+
+
+def _score_filter_band(score: Any) -> str:
+    try:
+        value = int(round(float(score or 0)))
+    except (TypeError, ValueError):
+        value = 0
+    if value >= 72:
+        return "72+"
+    if value >= 68:
+        return "68-71"
+    if value >= 64:
+        return "64-67"
+    return "<64"
+
+
+def _data_export_label(data_mode: Any) -> str:
+    return "Data Export"
+
+
 def _format_status_label(value: Any) -> str:
     if value is None or str(value).strip() == "":
         return "Not attached"
@@ -771,6 +927,126 @@ def _render_detail_score_rows(item: dict[str, Any]) -> str:
             """
         )
     return "\n".join(rows)
+
+
+def _render_evidence_cards(item: dict[str, Any]) -> str:
+    labels = (
+        ("power", "Power"),
+        ("fiber", "Fiber"),
+        ("water", "Water"),
+        ("access", "Access"),
+        ("talent", "Talent"),
+        ("environment", "Approval"),
+        ("market", "Market"),
+    )
+    evidence = item.get("evidence") or {}
+    cards: list[str] = []
+    for key, label in labels:
+        entry = evidence.get(key) or {}
+        score = entry.get("score")
+        facts = [str(value) for value in entry.get("facts", []) if value]
+        fact_html = "".join(f"<li>{escape(fact)}</li>" for fact in facts[:4])
+        score_label = f"{int(score)}/100" if isinstance(score, int | float) else "Context"
+        caveat = entry.get("caveat")
+        caveat_html = (
+            f'<p class="evidence-caveat">{escape(str(caveat))}</p>'
+            if caveat
+            else ""
+        )
+        cards.append(
+            f"""
+            <article class="dossier-card evidence-card">
+              <span>{escape(label)}</span>
+              <strong>{escape(str(entry.get("headline") or "Evidence requires diligence."))}</strong>
+              <b>{escape(score_label)}</b>
+              <ul>{fact_html}</ul>
+              {caveat_html}
+            </article>
+            """
+        )
+    return "\n".join(cards)
+
+
+def _render_infrastructure_evidence(item: dict[str, Any]) -> str:
+    rows = (
+        (
+            "Nearest substation",
+            item.get("nearest_substation_name"),
+            item.get("nearest_substation_distance_miles"),
+            (
+                f'{item.get("nearest_substation_voltage_kv")} kV voltage signal'
+                if item.get("nearest_substation_voltage_kv") is not None
+                else "Voltage class not attached"
+            ),
+        ),
+        (
+            "Nearest peering facility",
+            item.get("nearest_peering_facility_name"),
+            item.get("nearest_peering_distance_miles"),
+            (
+                f'{item.get("nearest_peering_carrier_count")} carrier count signal'
+                if item.get("nearest_peering_carrier_count") is not None
+                else "Carrier count not attached"
+            ),
+        ),
+        (
+            "Highway / access proxy",
+            item.get("nearest_highway_name"),
+            item.get("nearest_highway_distance_miles"),
+            "Ingress, frontage, and heavy-haul still require parcel diligence",
+        ),
+        (
+            "Water proxy",
+            item.get("nearest_water_name"),
+            item.get("nearest_water_distance_miles"),
+            "Municipal supply, reuse, and wastewater capacity still require confirmation",
+        ),
+    )
+    rendered: list[str] = []
+    for label, name, distance, note in rows:
+        distance_label = (
+            f"{float(distance):.1f} mi"
+            if distance is not None
+            else "Distance not attached"
+        )
+        rendered.append(
+            f"""
+            <div class="evidence-row">
+              <strong>{escape(label)}</strong>
+              <span>{escape(str(name or "Evidence not attached to this snapshot"))}</span>
+              <small>{escape(distance_label)} · {escape(str(note))}</small>
+            </div>
+            """
+        )
+    return "\n".join(rendered)
+
+
+def _render_market_commercial_evidence(item: dict[str, Any], source_link_html: str) -> str:
+    rows = (
+        ("Source", item.get("source_name") or item.get("listing_source_id") or "Internal catalogue"),
+        ("Listing key", item.get("source_listing_key") or "Not attached"),
+        ("Broker", item.get("broker_name") or "Not disclosed"),
+        ("Asking price", _format_money(item.get("asking_price"))),
+        ("Price per acre", _format_money_per_acre(item.get("price_per_acre"))),
+        ("Price status", item.get("price_status") or "Price not disclosed"),
+        ("Listing status", _format_status_label(item.get("listing_status"))),
+    )
+    rows_html = "\n".join(
+        f"""
+        <div class="evidence-row">
+          <strong>{escape(label)}</strong>
+          <span>{escape(str(value))}</span>
+        </div>
+        """
+        for label, value in rows
+    )
+    return f"""
+      {rows_html}
+      <div class="evidence-row">
+        <strong>Source evidence</strong>
+        {source_link_html}
+      </div>
+    """
 
 
 def _render_headwind_chips(item: dict[str, Any]) -> str:
@@ -1326,13 +1602,57 @@ def _read_client_readiness_brief(db_session: Session) -> dict[str, Any]:
     }
 
 
-def _render_client_brief(brief: dict[str, Any], *, data_mode: str) -> str:
+def _render_client_brief(
+    brief: dict[str, Any],
+    *,
+    data_mode: str,
+    summary: dict[str, Any] | None = None,
+) -> str:
     if data_mode == "live_candidate_scoring":
         mode_label = "Live candidate scoring"
     elif data_mode == "client_snapshot":
         mode_label = "Client contender snapshot"
     else:
         mode_label = "Seeded opportunity catalogue"
+
+    if data_mode == "client_snapshot":
+        summary = summary or {}
+        snapshot = summary.get("snapshot") or {}
+        coverage = summary.get("coverage") or {}
+        source_counts = coverage.get("source_count_by_name") or snapshot.get("source_counts") or {}
+        source_label = ", ".join(
+            f"{name}: {_format_count(count)}"
+            for name, count in source_counts.items()
+        ) or "Source coverage unavailable"
+        acreage_label = (
+            f"{snapshot.get('acreage_min', 1.0)}-{snapshot.get('acreage_max', 2.0)} acres"
+        )
+        generated_label = _format_snapshot_date(snapshot.get("generated_at"))
+        price_known = _format_count(coverage.get("price_known_count"))
+        price_missing = _format_count(coverage.get("price_missing_count"))
+        return f"""
+          <article class="brief-card">
+            <span>Scoring mode</span>
+            <strong>{escape(mode_label)}</strong>
+            <p>{escape(str(snapshot.get("selection_brief") or "Client snapshot generated from the current contender shortlist."))}</p>
+          </article>
+          <article class="brief-card">
+            <span>Snapshot scope</span>
+            <strong>{_format_count(summary.get("opportunity_count"))} contenders</strong>
+            <p>Strict {escape(acreage_label)} review universe across {_format_count(summary.get("corridor_count"))} metro corridors.</p>
+          </article>
+          <article class="brief-card">
+            <span>Source coverage</span>
+            <strong>{escape(source_label)}</strong>
+            <p>{price_known} records have asking-price signals; {price_missing} need broker or seller price confirmation.</p>
+          </article>
+          <article class="brief-card warning">
+            <span>Snapshot generated</span>
+            <strong>{escape(generated_label)}</strong>
+            <p>Use this as a client review snapshot; live connector status is intentionally separated from this board.</p>
+          </article>
+        """
+
     return f"""
       <article class="brief-card">
         <span>Scoring mode</span>
@@ -1419,6 +1739,34 @@ def _render_corridor_rows(corridors: Iterable[dict[str, Any]]) -> str:
 def _render_opportunity_rows(opportunities: Iterable[dict[str, Any]]) -> str:
     rows: list[str] = []
     for item in opportunities:
+        source_name = str(item.get("source_name") or item.get("listing_source_id") or "Unknown")
+        rank_bucket = str(item.get("rank_bucket") or "")
+        price_status = str(item.get("price_status") or "Price not disclosed")
+        approval_band = _score_filter_band(item.get("approval_score"))
+        viability_band = _score_filter_band(item.get("viability_score"))
+        price_per_acre = item.get("price_per_acre")
+        compare_payload = {
+            "rank": item.get("rank"),
+            "site_name": item.get("site_name"),
+            "metro": item.get("metro"),
+            "county": item.get("county"),
+            "acreage": item.get("acreage"),
+            "asking_price": _format_money(item.get("asking_price")),
+            "price_per_acre": _format_money_per_acre(price_per_acre),
+            "viability_score": item.get("viability_score"),
+            "approval_score": item.get("approval_score"),
+            "power_score": item.get("power_score"),
+            "fiber_score": item.get("fiber_score"),
+            "water_score": item.get("water_score"),
+            "talent_score": item.get("talent_score"),
+            "rank_bucket": rank_bucket,
+            "caveat": (
+                "Price needs confirmation"
+                if item.get("asking_price") is None
+                else "Validate utility and entitlement facts"
+            ),
+            "href": _contender_detail_href(item),
+        }
         search_blob = " ".join(
             [
                 item["site_name"],
@@ -1428,6 +1776,11 @@ def _render_opportunity_rows(opportunities: Iterable[dict[str, Any]]) -> str:
                 item["county"],
                 item["university_anchor"],
                 item["readiness_stage"],
+                rank_bucket,
+                price_status,
+                source_name,
+                approval_band,
+                viability_band,
                 item["approval_stage"],
                 item["social_category"],
                 item["political_category"],
@@ -1448,6 +1801,19 @@ def _render_opportunity_rows(opportunities: Iterable[dict[str, Any]]) -> str:
               data-metro="{escape(_tokenize(item["metro"]))}"
               data-stage="{escape(_tokenize(item["readiness_stage"]))}"
               data-university="{escape(_tokenize(item["university_anchor"]))}"
+              data-county="{escape(_tokenize(item["county"]))}"
+              data-score-band="{escape(_tokenize(item["score_band"]))}"
+              data-rank-bucket="{escape(_tokenize(rank_bucket))}"
+              data-price-status="{escape(_tokenize(price_status))}"
+              data-source="{escape(_tokenize(source_name))}"
+              data-approval-band="{escape(_tokenize(approval_band))}"
+              data-viability-band="{escape(_tokenize(viability_band))}"
+              data-rank="{int(item["rank"])}"
+              data-viability="{int(item["viability_score"])}"
+              data-approval="{int(item["approval_score"])}"
+              data-acreage="{float(item.get("acreage") or 0)}"
+              data-price-per-acre="{float(price_per_acre or 0)}"
+              data-compare="{escape(_json_for_html(compare_payload))}"
               data-search="{escape(search_blob.lower())}"
               role="link"
               tabindex="0"
@@ -1455,18 +1821,33 @@ def _render_opportunity_rows(opportunities: Iterable[dict[str, Any]]) -> str:
               onclick="if (!event.target.closest('a, button, input, select')) window.location.assign(this.dataset.href)"
               onkeydown="if ((event.key === 'Enter' || event.key === ' ') && !event.target.closest('a, button, input, select')) {{ event.preventDefault(); window.location.assign(this.dataset.href); }}"
             >
+              <td>
+                <input
+                  class="compare-checkbox"
+                  type="checkbox"
+                  aria-label="Compare {escape(item["site_name"])}"
+                />
+              </td>
               <td><span class="rank-pill">{item["rank"]:02d}</span></td>
               <td>
                 <div class="site-cell">
                   <a class="site-title-link" href="{escape(detail_href)}"><strong>{escape(item["site_name"])}</strong></a>
                   <span>{escape(item["city"])} · {escape(item["county"])}</span>
                   <small>{escape(item["corridor_name"])}</small>
+                  <small>{escape(rank_bucket)} · {escape(price_status)}</small>
                   <small><a href="{escape(detail_href)}">Open contender detail</a></small>
                 </div>
               </td>
               <td>{escape(item["metro"])}</td>
+              <td>{escape(item["county"])}</td>
               <td>{escape(item["university_anchor"])}</td>
               <td>{escape(item["acreage_band"])}</td>
+              <td>
+                <div class="score-cell">
+                  <strong>{escape(_format_money_per_acre(price_per_acre))}</strong>
+                  <small>{escape(source_name)}</small>
+                </div>
+              </td>
               <td><span class="stage-chip">{escape(item["readiness_stage"])}</span></td>
               <td>
                 <div class="score-cell">
@@ -1694,9 +2075,12 @@ def _render_contender_detail_page(
         if contender.get("confidence_score") is not None
         else "Catalogue confidence"
     )
-    listing_source = contender.get("listing_source_id") or "seeded-catalogue"
-    source_key = contender.get("source_listing_key") or "Not attached"
     market_listing_id = contender.get("market_listing_id") or "Not attached"
+    rank_bucket = contender.get("rank_bucket") or ""
+    export_label = _data_export_label(summary["data_mode"])
+    evidence_cards_html = _render_evidence_cards(contender)
+    infrastructure_html = _render_infrastructure_evidence(contender)
+    market_commercial_html = _render_market_commercial_evidence(contender, source_link_html)
 
     return f"""
     <!doctype html>
@@ -2483,7 +2867,7 @@ def _render_contender_detail_page(
             <a href="/dashboard/contenders">Back to contender board</a>
             <div class="footer-links">
               <a href="/">Main portal</a>
-              <a href="/dashboard/summary">Live JSON</a>
+              <a href="/dashboard/summary">{escape(export_label)}</a>
             </div>
           </nav>
 
@@ -2494,6 +2878,8 @@ def _render_contender_detail_page(
             <a href="#thesis">Thesis</a>
             <a href="#risk">Risks</a>
             <a href="#evidence">Evidence</a>
+            <a href="#infrastructure">Infrastructure</a>
+            <a href="#commercial">Commercial</a>
             <a href="#scoring">Scoring</a>
             <a href="#timeline">Workplan</a>
             <a href="#comparisons">Comparisons</a>
@@ -2512,12 +2898,13 @@ def _render_contender_detail_page(
                 <span class="meta-pill">{escape(contender["metro"])}</span>
                 <span class="meta-pill">{escape(contender["city"])} &middot; {escape(contender["county"])}</span>
                 <span class="meta-pill">{escape(contender["readiness_stage"])}</span>
+                <span class="meta-pill">{escape(str(rank_bucket))}</span>
                 <span class="meta-pill">{escape(confidence_label)}</span>
               </div>
               <div class="hero-kicker-grid" aria-label="Client summary">
                 <article class="hero-kicker">
                   <span>Client Read</span>
-                  <strong>{escape(contender["score_band"])} &middot; {escape(contender["readiness_stage"])}</strong>
+                  <strong>{escape(str(rank_bucket))} &middot; {escape(contender["score_band"])}</strong>
                 </article>
                 <article class="hero-kicker">
                   <span>Primary Market</span>
@@ -2579,7 +2966,7 @@ def _render_contender_detail_page(
             <article class="metric-card">
               <span>Asking Price</span>
               <strong>{escape(_format_money(contender.get("asking_price")))}</strong>
-              <small>{escape(_format_status_label(contender.get("listing_status")))} status.</small>
+              <small>{escape(_format_money_per_acre(contender.get("price_per_acre")))} · {escape(contender.get("price_status") or "Price not disclosed")}.</small>
             </article>
           </section>
 
@@ -2588,6 +2975,20 @@ def _render_contender_detail_page(
           </section>
 
           {top_ten_dossier_html}
+
+          <section class="panel section-anchor" id="evidence">
+            <div class="panel-header">
+              <div>
+                <span class="eyebrow">Why this site ranks</span>
+                <h2>Evidence Cards</h2>
+                <p>Client-readable proof points, confidence notes, and caveats behind the score.</p>
+              </div>
+              <strong>{escape(str(rank_bucket))}</strong>
+            </div>
+            <div class="dossier-grid evidence-card-grid">
+              {evidence_cards_html}
+            </div>
+          </section>
 
           <section class="content-grid section-anchor" id="explanation">
             <section class="panel">
@@ -2603,36 +3004,34 @@ def _render_contender_detail_page(
               </div>
             </section>
 
-            <aside class="panel section-anchor" id="evidence">
+            <aside class="panel section-anchor" id="commercial">
               <div class="panel-header">
                 <div>
-                  <h2>Market Evidence</h2>
-                  <p>Traceable listing and board context attached to this contender.</p>
+                  <h2>Commercial Evidence</h2>
+                  <p>Traceable listing, pricing, broker, and source context attached to this contender.</p>
                 </div>
               </div>
               <div class="evidence-grid">
+                {market_commercial_html}
                 <div class="evidence-row">
-                  <strong>Listing source</strong>
-                  <span>{escape(str(listing_source))}</span>
-                </div>
-                <div class="evidence-row">
-                  <strong>Source listing key</strong>
-                  <span>{escape(str(source_key))}</span>
-                </div>
-                <div class="evidence-row">
-                  <strong>Market listing id</strong>
+                  <strong>Internal record</strong>
                   <span>{escape(str(market_listing_id))}</span>
-                </div>
-                <div class="evidence-row">
-                  <strong>Corridor</strong>
-                  <span>{escape(contender["corridor_name"])}</span>
-                </div>
-                <div class="evidence-row">
-                  <strong>Source evidence</strong>
-                  {source_link_html}
                 </div>
               </div>
             </aside>
+          </section>
+
+          <section class="panel section-anchor" id="infrastructure">
+            <div class="panel-header">
+              <div>
+                <h2>Infrastructure Proximity</h2>
+                <p>Nearest known power, fiber, highway, and water signals where the scoring run has attached evidence.</p>
+              </div>
+              <strong>{escape(contender["metro"])}</strong>
+            </div>
+            <div class="evidence-grid infrastructure-grid">
+              {infrastructure_html}
+            </div>
           </section>
 
           <section class="content-grid section-anchor" id="scoring">
@@ -2703,7 +3102,7 @@ def _render_contender_detail_page(
             <span>{escape(settings.app_name)} &middot; version {escape(APP_VERSION)} &middot; generated {escape(summary["generated_at"])}</span>
             <div class="footer-links">
               <a href="/dashboard/contenders">Contenders</a>
-              <a href="/dashboard/summary">Live JSON</a>
+              <a href="/dashboard/summary">{escape(export_label)}</a>
               <a href="/health">Health</a>
             </div>
           </footer>
@@ -2762,6 +3161,7 @@ def contenders_page(_: DashboardAccess, db: DbSession) -> str:
     client_brief_html = _render_client_brief(
         client_brief,
         data_mode=str(summary["data_mode"]),
+        summary=summary,
     )
     opportunity_rows_html = _render_opportunity_rows(contenders)
     map_points_html = _render_map_points(contenders)
@@ -2769,6 +3169,14 @@ def contenders_page(_: DashboardAccess, db: DbSession) -> str:
     metro_options_html = _render_filter_options(summary["filters"]["metros"])
     stage_options_html = _render_filter_options(summary["filters"]["readiness_stages"])
     university_options_html = _render_filter_options(summary["filters"]["university_anchors"])
+    county_options_html = _render_filter_options(summary["filters"].get("counties", []))
+    score_band_options_html = _render_filter_options(summary["filters"].get("score_bands", []))
+    rank_bucket_options_html = _render_filter_options(summary["filters"].get("rank_buckets", []))
+    price_status_options_html = _render_filter_options(summary["filters"].get("price_statuses", []))
+    source_options_html = _render_filter_options(summary["filters"].get("sources", []))
+    approval_band_options_html = _render_filter_options(summary["filters"].get("approval_bands", []))
+    viability_band_options_html = _render_filter_options(summary["filters"].get("viability_bands", []))
+    export_label = _data_export_label(summary["data_mode"])
 
     return f"""
     <!doctype html>
@@ -3378,7 +3786,7 @@ def contenders_page(_: DashboardAccess, db: DbSession) -> str:
               <div class="hero-actions">
                 <a class="hero-link primary" href="#contender-catalogue">Open contender board</a>
                 <a class="hero-link" href="/">Main portal</a>
-                <a class="hero-link" href="/dashboard/summary">Live JSON</a>
+                <a class="hero-link" href="/dashboard/summary">{escape(export_label)}</a>
               </div>
               <div class="hero-meta">
                 <span class="meta-pill">Mode: {escape(summary["data_mode"])}</span>
@@ -3390,7 +3798,7 @@ def contenders_page(_: DashboardAccess, db: DbSession) -> str:
               <header>
                 <div>
                   <h2>Contender Field</h2>
-                  <span>The balanced live board with minimum coverage across the major Texas metros.</span>
+                  <span>Snapshot-grade contender intelligence with minimum coverage across the major Texas metros.</span>
                 </div>
                 <strong>{contender_count} sites</strong>
               </header>
@@ -3442,9 +3850,9 @@ def contenders_page(_: DashboardAccess, db: DbSession) -> str:
             <div class="panel-header">
               <div>
                 <h2>Client Readiness Brief</h2>
-                <p>Fast context for what is live, what changed, and what still needs diligence before a client conversation.</p>
+                <p>Fast context for what is in scope, how complete the evidence is, and what still needs diligence before a client conversation.</p>
               </div>
-              <strong>Live data</strong>
+              <strong>{escape("Live data" if summary["data_mode"] == "live_candidate_scoring" else "Snapshot data")}</strong>
             </div>
             <div class="client-brief">
               {client_brief_html}
@@ -3484,24 +3892,62 @@ def contenders_page(_: DashboardAccess, db: DbSession) -> str:
                   <option value="">All university anchors</option>
                   {university_options_html}
                 </select>
+                <select id="county-filter">
+                  <option value="">All counties</option>
+                  {county_options_html}
+                </select>
+                <select id="rank-bucket-filter">
+                  <option value="">All pursuit buckets</option>
+                  {rank_bucket_options_html}
+                </select>
+                <select id="score-band-filter">
+                  <option value="">All score tiers</option>
+                  {score_band_options_html}
+                </select>
+                <select id="price-status-filter">
+                  <option value="">All price statuses</option>
+                  {price_status_options_html}
+                </select>
+                <select id="source-filter">
+                  <option value="">All sources</option>
+                  {source_options_html}
+                </select>
+                <select id="approval-band-filter">
+                  <option value="">All approval bands</option>
+                  {approval_band_options_html}
+                </select>
+                <select id="viability-band-filter">
+                  <option value="">All viability bands</option>
+                  {viability_band_options_html}
+                </select>
               </div>
             </div>
             <div class="catalog-tools">
               <strong>{priority_now_count} priority-now sites · {near_term_count} near-term builds</strong>
               <span>{escape(summary["market"])} private client shortlist with major-metro balance</span>
             </div>
+            <div class="compare-tray" id="compare-tray" aria-live="polite">
+              <div>
+                <strong>Compare contenders</strong>
+                <span id="compare-status">Select 2-4 rows to compare the client-critical facts.</span>
+              </div>
+              <div class="compare-grid" id="compare-grid"></div>
+            </div>
             <div class="table-shell">
               <table>
                 <thead>
                   <tr>
-                    <th>Rank</th>
+                    <th>Compare</th>
+                    <th><button class="sort-button" type="button" data-sort-key="rank">Rank</button></th>
                     <th>Site</th>
-                    <th>Metro</th>
+                    <th><button class="sort-button" type="button" data-sort-key="metro">Metro</button></th>
+                    <th>County</th>
                     <th>University anchor</th>
-                    <th>Land scale</th>
+                    <th><button class="sort-button" type="button" data-sort-key="acreage">Land scale</button></th>
+                    <th><button class="sort-button" type="button" data-sort-key="price-per-acre">Price / acre</button></th>
                     <th>Readiness</th>
-                    <th>Approval</th>
-                    <th>Score</th>
+                    <th><button class="sort-button" type="button" data-sort-key="approval">Approval</button></th>
+                    <th><button class="sort-button" type="button" data-sort-key="viability">Score</button></th>
                     <th>Access</th>
                   </tr>
                 </thead>
@@ -3516,7 +3962,7 @@ def contenders_page(_: DashboardAccess, db: DbSession) -> str:
             <span>{escape(settings.app_name)} · version {escape(APP_VERSION)}</span>
             <div class="footer-links">
               <a href="/">Main portal</a>
-              <a href="/dashboard/summary">Live JSON</a>
+              <a href="/dashboard/summary">{escape(export_label)}</a>
               <a href="/health">Health</a>
             </div>
           </footer>
@@ -3527,8 +3973,20 @@ def contenders_page(_: DashboardAccess, db: DbSession) -> str:
           const metroFilter = document.getElementById("metro-filter");
           const stageFilter = document.getElementById("stage-filter");
           const universityFilter = document.getElementById("university-filter");
+          const countyFilter = document.getElementById("county-filter");
+          const scoreBandFilter = document.getElementById("score-band-filter");
+          const rankBucketFilter = document.getElementById("rank-bucket-filter");
+          const priceStatusFilter = document.getElementById("price-status-filter");
+          const sourceFilter = document.getElementById("source-filter");
+          const approvalBandFilter = document.getElementById("approval-band-filter");
+          const viabilityBandFilter = document.getElementById("viability-band-filter");
           const catalogueCount = document.getElementById("catalogue-count");
           const rows = Array.from(document.querySelectorAll(".opportunity-row"));
+          const sortButtons = Array.from(document.querySelectorAll(".sort-button"));
+          const compareBoxes = Array.from(document.querySelectorAll(".compare-checkbox"));
+          const compareGrid = document.getElementById("compare-grid");
+          const compareStatus = document.getElementById("compare-status");
+          let sortDirection = "asc";
 
           const openRowDetail = (row) => {{
             const href = row.dataset.href;
@@ -3542,6 +4000,13 @@ def contenders_page(_: DashboardAccess, db: DbSession) -> str:
             const metroToken = metroFilter.value;
             const stageToken = stageFilter.value;
             const universityToken = universityFilter.value;
+            const countyToken = countyFilter.value;
+            const scoreBandToken = scoreBandFilter.value;
+            const rankBucketToken = rankBucketFilter.value;
+            const priceStatusToken = priceStatusFilter.value;
+            const sourceToken = sourceFilter.value;
+            const approvalBandToken = approvalBandFilter.value;
+            const viabilityBandToken = viabilityBandFilter.value;
             let visibleCount = 0;
 
             rows.forEach((row) => {{
@@ -3549,7 +4014,24 @@ def contenders_page(_: DashboardAccess, db: DbSession) -> str:
               const matchesMetro = !metroToken || row.dataset.metro === metroToken;
               const matchesStage = !stageToken || row.dataset.stage === stageToken;
               const matchesUniversity = !universityToken || row.dataset.university === universityToken;
-              const visible = matchesSearch && matchesMetro && matchesStage && matchesUniversity;
+              const matchesCounty = !countyToken || row.dataset.county === countyToken;
+              const matchesScoreBand = !scoreBandToken || row.dataset.scoreBand === scoreBandToken;
+              const matchesRankBucket = !rankBucketToken || row.dataset.rankBucket === rankBucketToken;
+              const matchesPriceStatus = !priceStatusToken || row.dataset.priceStatus === priceStatusToken;
+              const matchesSource = !sourceToken || row.dataset.source === sourceToken;
+              const matchesApprovalBand = !approvalBandToken || row.dataset.approvalBand === approvalBandToken;
+              const matchesViabilityBand = !viabilityBandToken || row.dataset.viabilityBand === viabilityBandToken;
+              const visible = matchesSearch
+                && matchesMetro
+                && matchesStage
+                && matchesUniversity
+                && matchesCounty
+                && matchesScoreBand
+                && matchesRankBucket
+                && matchesPriceStatus
+                && matchesSource
+                && matchesApprovalBand
+                && matchesViabilityBand;
               row.hidden = !visible;
               if (visible) {{
                 visibleCount += 1;
@@ -3559,9 +4041,71 @@ def contenders_page(_: DashboardAccess, db: DbSession) -> str:
             catalogueCount.textContent = `Showing ${{visibleCount}} of {contender_count} contenders.`;
           }};
 
-          [searchFilter, metroFilter, stageFilter, universityFilter].forEach((node) => {{
+          const sortRows = (key) => {{
+            const tableBody = document.getElementById("opportunity-table-body");
+            sortDirection = sortDirection === "asc" ? "desc" : "asc";
+            const sorted = [...rows].sort((left, right) => {{
+              const leftValue = left.dataset[key] || "";
+              const rightValue = right.dataset[key] || "";
+              const leftNumber = Number(leftValue);
+              const rightNumber = Number(rightValue);
+              const comparison = Number.isNaN(leftNumber) || Number.isNaN(rightNumber)
+                ? leftValue.localeCompare(rightValue)
+                : leftNumber - rightNumber;
+              return sortDirection === "asc" ? comparison : -comparison;
+            }});
+            sorted.forEach((row) => tableBody.appendChild(row));
+          }};
+
+          const updateCompareTray = () => {{
+            const selectedBoxes = compareBoxes.filter((box) => box.checked);
+            if (selectedBoxes.length > 4) {{
+              selectedBoxes[selectedBoxes.length - 1].checked = false;
+              updateCompareTray();
+              return;
+            }}
+            const selected = compareBoxes
+              .filter((box) => box.checked)
+              .map((box) => JSON.parse(box.closest("tr").dataset.compare));
+            compareStatus.textContent = selected.length
+              ? `${{selected.length}} selected. Use 2-4 for the strongest comparison.`
+              : "Select 2-4 rows to compare the client-critical facts.";
+            compareGrid.innerHTML = selected.map((item) => `
+              <article class="compare-card">
+                <span>Rank ${{String(item.rank).padStart(2, "0")}} · ${{item.rank_bucket}}</span>
+                <strong>${{item.site_name}}</strong>
+                <small>${{item.metro}} · ${{item.county}}</small>
+                <small>${{item.acreage}} acres · ${{item.asking_price}} · ${{item.price_per_acre}}</small>
+                <small>Score ${{item.viability_score}} · Approval ${{item.approval_score}}</small>
+                <small>Power ${{item.power_score}} · Fiber ${{item.fiber_score}} · Water ${{item.water_score}} · Talent ${{item.talent_score}}</small>
+                <small>${{item.caveat}}</small>
+              </article>
+            `).join("");
+          }};
+
+          [
+            searchFilter,
+            metroFilter,
+            stageFilter,
+            universityFilter,
+            countyFilter,
+            scoreBandFilter,
+            rankBucketFilter,
+            priceStatusFilter,
+            sourceFilter,
+            approvalBandFilter,
+            viabilityBandFilter,
+          ].forEach((node) => {{
             node.addEventListener("input", applyFilters);
             node.addEventListener("change", applyFilters);
+          }});
+
+          sortButtons.forEach((button) => {{
+            button.addEventListener("click", () => sortRows(button.dataset.sortKey));
+          }});
+
+          compareBoxes.forEach((box) => {{
+            box.addEventListener("change", updateCompareTray);
           }});
 
           rows.forEach((row) => {{
@@ -3600,6 +4144,13 @@ def landing_page(_: DashboardAccess, db: DbSession) -> str:
     metro_options_html = _render_filter_options(summary["filters"]["metros"])
     stage_options_html = _render_filter_options(summary["filters"]["readiness_stages"])
     university_options_html = _render_filter_options(summary["filters"]["university_anchors"])
+    county_options_html = _render_filter_options(summary["filters"].get("counties", []))
+    score_band_options_html = _render_filter_options(summary["filters"].get("score_bands", []))
+    rank_bucket_options_html = _render_filter_options(summary["filters"].get("rank_buckets", []))
+    price_status_options_html = _render_filter_options(summary["filters"].get("price_statuses", []))
+    source_options_html = _render_filter_options(summary["filters"].get("sources", []))
+    approval_band_options_html = _render_filter_options(summary["filters"].get("approval_bands", []))
+    viability_band_options_html = _render_filter_options(summary["filters"].get("viability_bands", []))
     phase_totals_html = _render_phase_totals(coverage.get("phase_totals", []))
     metro_snapshots = _build_map_metro_snapshots(summary["opportunities"])
     map_hotspots_html = _render_map_hotspots(metro_snapshots)
@@ -3615,6 +4166,7 @@ def landing_page(_: DashboardAccess, db: DbSession) -> str:
         (summary["priority_now_count"] / max(summary["opportunity_count"], 1)) * 100
     )
     payload_json = _json_for_html(summary)
+    export_label = _data_export_label(summary["data_mode"])
 
     monitoring_status = (
         "Live pipeline feed active" if monitoring["available"] else "Monitoring unavailable"
@@ -4774,7 +5326,7 @@ def landing_page(_: DashboardAccess, db: DbSession) -> str:
               <div class="hero-actions">
                 <a class="hero-link primary" href="#opportunity-catalogue">Explore the {summary["opportunity_count"]}-site watchlist</a>
                 <a class="hero-link" href="/dashboard/contenders">Open contender board</a>
-                <a class="hero-link" href="/dashboard/summary">Open live JSON</a>
+                <a class="hero-link" href="/dashboard/summary">Open {escape(export_label)}</a>
                 <a class="hero-link" href="/health">Health check</a>
               </div>
               <div class="hero-kpis">
@@ -4805,13 +5357,13 @@ def landing_page(_: DashboardAccess, db: DbSession) -> str:
               <header>
                 <div>
                   <h2>Texas Opportunity Field</h2>
-                  <span>Live siting field with metro hotspots, corridor beams, and ranking density across the active client board.</span>
+                  <span>Site intelligence map with metro hotspots, corridor beams, and ranking density across the active client board.</span>
                 </div>
                 <strong>{summary["opportunity_count"]} sites</strong>
               </header>
               <div class="map-stage">
                 <div class="map-stage-overlay top">
-                  <span class="map-badge">Live field telemetry</span>
+                  <span class="map-badge">Site intelligence map</span>
                   <div class="map-stat-grid">
                     <article class="map-stat">
                       <span>Avg score</span>
@@ -4980,20 +5532,58 @@ def landing_page(_: DashboardAccess, db: DbSession) -> str:
                     <option value="">All university anchors</option>
                     {university_options_html}
                   </select>
+                  <select id="county-filter">
+                    <option value="">All counties</option>
+                    {county_options_html}
+                  </select>
+                  <select id="rank-bucket-filter">
+                    <option value="">All pursuit buckets</option>
+                    {rank_bucket_options_html}
+                  </select>
+                  <select id="score-band-filter">
+                    <option value="">All score tiers</option>
+                    {score_band_options_html}
+                  </select>
+                  <select id="price-status-filter">
+                    <option value="">All price statuses</option>
+                    {price_status_options_html}
+                  </select>
+                  <select id="source-filter">
+                    <option value="">All sources</option>
+                    {source_options_html}
+                  </select>
+                  <select id="approval-band-filter">
+                    <option value="">All approval bands</option>
+                    {approval_band_options_html}
+                  </select>
+                  <select id="viability-band-filter">
+                    <option value="">All viability bands</option>
+                    {viability_band_options_html}
+                  </select>
                 </div>
+              </div>
+              <div class="compare-tray" id="compare-tray" aria-live="polite">
+                <div>
+                  <strong>Compare contenders</strong>
+                  <span id="compare-status">Select 2-4 rows to compare the client-critical facts.</span>
+                </div>
+                <div class="compare-grid" id="compare-grid"></div>
               </div>
               <div class="table-shell">
                 <table>
                   <thead>
                     <tr>
-                      <th>Rank</th>
+                      <th>Compare</th>
+                      <th><button class="sort-button" type="button" data-sort-key="rank">Rank</button></th>
                       <th>Site</th>
-                      <th>Metro</th>
+                      <th><button class="sort-button" type="button" data-sort-key="metro">Metro</button></th>
+                      <th>County</th>
                       <th>University anchor</th>
-                      <th>Land scale</th>
+                      <th><button class="sort-button" type="button" data-sort-key="acreage">Land scale</button></th>
+                      <th><button class="sort-button" type="button" data-sort-key="price-per-acre">Price / acre</button></th>
                       <th>Readiness</th>
-                      <th>Approval</th>
-                      <th>Score</th>
+                      <th><button class="sort-button" type="button" data-sort-key="approval">Approval</button></th>
+                      <th><button class="sort-button" type="button" data-sort-key="viability">Score</button></th>
                       <th>Access</th>
                     </tr>
                   </thead>
@@ -5009,7 +5599,7 @@ def landing_page(_: DashboardAccess, db: DbSession) -> str:
             <span>{escape(settings.app_name)} · version <span id="version-pill">{escape(APP_VERSION)}</span></span>
             <div class="footer-links">
               <a href="/dashboard/contenders">Contenders</a>
-              <a href="/dashboard/summary">Live JSON</a>
+              <a href="/dashboard/summary">{escape(export_label)}</a>
               <a href="/health">Health</a>
               <a href="/version">Version</a>
             </div>
@@ -5025,8 +5615,20 @@ def landing_page(_: DashboardAccess, db: DbSession) -> str:
           const metroFilter = document.getElementById("metro-filter");
           const stageFilter = document.getElementById("stage-filter");
           const universityFilter = document.getElementById("university-filter");
+          const countyFilter = document.getElementById("county-filter");
+          const scoreBandFilter = document.getElementById("score-band-filter");
+          const rankBucketFilter = document.getElementById("rank-bucket-filter");
+          const priceStatusFilter = document.getElementById("price-status-filter");
+          const sourceFilter = document.getElementById("source-filter");
+          const approvalBandFilter = document.getElementById("approval-band-filter");
+          const viabilityBandFilter = document.getElementById("viability-band-filter");
           const catalogueCount = document.getElementById("catalogue-count");
           const rows = Array.from(document.querySelectorAll(".opportunity-row"));
+          const sortButtons = Array.from(document.querySelectorAll(".sort-button"));
+          const compareBoxes = Array.from(document.querySelectorAll(".compare-checkbox"));
+          const compareGrid = document.getElementById("compare-grid");
+          const compareStatus = document.getElementById("compare-status");
+          let sortDirection = "asc";
 
           const openRowDetail = (row) => {{
             const href = row.dataset.href;
@@ -5063,6 +5665,13 @@ def landing_page(_: DashboardAccess, db: DbSession) -> str:
             const metroValue = metroFilter.value;
             const stageValue = stageFilter.value;
             const universityValue = universityFilter.value;
+            const countyValue = countyFilter.value;
+            const scoreBandValue = scoreBandFilter.value;
+            const rankBucketValue = rankBucketFilter.value;
+            const priceStatusValue = priceStatusFilter.value;
+            const sourceValue = sourceFilter.value;
+            const approvalBandValue = approvalBandFilter.value;
+            const viabilityBandValue = viabilityBandFilter.value;
 
             let visibleCount = 0;
             for (const row of rows) {{
@@ -5070,7 +5679,24 @@ def landing_page(_: DashboardAccess, db: DbSession) -> str:
               const matchesMetro = !metroValue || row.dataset.metro === metroValue;
               const matchesStage = !stageValue || row.dataset.stage === stageValue;
               const matchesUniversity = !universityValue || row.dataset.university === universityValue;
-              const isVisible = matchesSearch && matchesMetro && matchesStage && matchesUniversity;
+              const matchesCounty = !countyValue || row.dataset.county === countyValue;
+              const matchesScoreBand = !scoreBandValue || row.dataset.scoreBand === scoreBandValue;
+              const matchesRankBucket = !rankBucketValue || row.dataset.rankBucket === rankBucketValue;
+              const matchesPriceStatus = !priceStatusValue || row.dataset.priceStatus === priceStatusValue;
+              const matchesSource = !sourceValue || row.dataset.source === sourceValue;
+              const matchesApprovalBand = !approvalBandValue || row.dataset.approvalBand === approvalBandValue;
+              const matchesViabilityBand = !viabilityBandValue || row.dataset.viabilityBand === viabilityBandValue;
+              const isVisible = matchesSearch
+                && matchesMetro
+                && matchesStage
+                && matchesUniversity
+                && matchesCounty
+                && matchesScoreBand
+                && matchesRankBucket
+                && matchesPriceStatus
+                && matchesSource
+                && matchesApprovalBand
+                && matchesViabilityBand;
               row.classList.toggle("is-hidden", !isVisible);
               if (isVisible) {{
                 visibleCount += 1;
@@ -5078,6 +5704,49 @@ def landing_page(_: DashboardAccess, db: DbSession) -> str:
             }}
 
             catalogueCount.textContent = `Showing ${{visibleCount}} of ${{rows.length}} sites.`;
+          }}
+
+          function sortRows(key) {{
+            const tableBody = document.getElementById("opportunity-table-body");
+            sortDirection = sortDirection === "asc" ? "desc" : "asc";
+            const sorted = [...rows].sort((left, right) => {{
+              const leftValue = left.dataset[key] || "";
+              const rightValue = right.dataset[key] || "";
+              const leftNumber = Number(leftValue);
+              const rightNumber = Number(rightValue);
+              const comparison = Number.isNaN(leftNumber) || Number.isNaN(rightNumber)
+                ? leftValue.localeCompare(rightValue)
+                : leftNumber - rightNumber;
+              return sortDirection === "asc" ? comparison : -comparison;
+            }});
+            sorted.forEach((row) => tableBody.appendChild(row));
+          }}
+
+          function updateCompareTray() {{
+            const selectedBoxes = compareBoxes.filter((box) => box.checked);
+            if (selectedBoxes.length > 4) {{
+              selectedBoxes[selectedBoxes.length - 1].checked = false;
+            }}
+            const selected = compareBoxes
+              .filter((box) => box.checked)
+              .map((box) => JSON.parse(box.closest("tr").dataset.compare));
+            if (!compareGrid || !compareStatus) {{
+              return;
+            }}
+            compareStatus.textContent = selected.length
+              ? `${{selected.length}} selected. Use 2-4 for the strongest comparison.`
+              : "Select 2-4 rows to compare the client-critical facts.";
+            compareGrid.innerHTML = selected.map((item) => `
+              <article class="compare-card">
+                <span>Rank ${{String(item.rank).padStart(2, "0")}} · ${{item.rank_bucket}}</span>
+                <strong>${{item.site_name}}</strong>
+                <small>${{item.metro}} · ${{item.county}}</small>
+                <small>${{item.acreage}} acres · ${{item.asking_price}} · ${{item.price_per_acre}}</small>
+                <small>Score ${{item.viability_score}} · Approval ${{item.approval_score}}</small>
+                <small>Power ${{item.power_score}} · Fiber ${{item.fiber_score}} · Water ${{item.water_score}} · Talent ${{item.talent_score}}</small>
+                <small>${{item.caveat}}</small>
+              </article>
+            `).join("");
           }}
 
           function updateMonitoring(monitoring) {{
@@ -5162,6 +5831,26 @@ def landing_page(_: DashboardAccess, db: DbSession) -> str:
           if (universityFilter) {{
             universityFilter.addEventListener("change", applyFilters);
           }}
+          [
+            countyFilter,
+            scoreBandFilter,
+            rankBucketFilter,
+            priceStatusFilter,
+            sourceFilter,
+            approvalBandFilter,
+            viabilityBandFilter,
+          ].forEach((node) => {{
+            if (node) {{
+              node.addEventListener("input", applyFilters);
+              node.addEventListener("change", applyFilters);
+            }}
+          }});
+          sortButtons.forEach((button) => {{
+            button.addEventListener("click", () => sortRows(button.dataset.sortKey));
+          }});
+          compareBoxes.forEach((box) => {{
+            box.addEventListener("change", updateCompareTray);
+          }});
 
           rows.forEach((row) => {{
             row.addEventListener("click", (event) => {{

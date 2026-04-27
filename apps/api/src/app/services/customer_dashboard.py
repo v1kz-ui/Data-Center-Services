@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1210,7 +1212,13 @@ def build_customer_dashboard_summary(
         except Exception:
             live_opportunities = []
 
-    snapshot_opportunities = [] if live_opportunities else _load_client_contender_snapshot(settings)
+    snapshot_payload = (
+        {"metadata": {}, "opportunities": []}
+        if live_opportunities
+        else _load_client_contender_snapshot(settings)
+    )
+    snapshot_metadata = dict(snapshot_payload.get("metadata") or {})
+    snapshot_opportunities = list(snapshot_payload.get("opportunities") or [])
     if live_opportunities:
         data_mode = "live_candidate_scoring"
         opportunities = live_opportunities
@@ -1220,7 +1228,7 @@ def build_customer_dashboard_summary(
     else:
         data_mode = "seeded_catalog"
         opportunities = _build_opportunities()
-    market_backed_mode = data_mode in {"live_candidate_scoring", "client_snapshot"}
+    opportunities = _prepare_opportunities(opportunities)
     featured_opportunities = opportunities[:6]
     corridors = _build_corridors(opportunities)
     unique_universities = sorted(
@@ -1232,6 +1240,7 @@ def build_customer_dashboard_summary(
     )
     top_tier_count = sum(1 for item in opportunities if item["score_band"] == "Tier 1")
     opportunity_count = len(opportunities)
+    coverage = _build_coverage_summary(opportunities)
 
     return {
         "app_name": settings.app_name,
@@ -1241,25 +1250,8 @@ def build_customer_dashboard_summary(
         "generated_at": generated_at,
         "market": "Texas",
         "data_mode": data_mode,
-        "hero_title": (
-            f"{opportunity_count} live-ranked Texas opportunities balanced across major metros."
-            if market_backed_mode
-            else (
-                f"{opportunity_count} ranked Texas opportunities near cities, utilities, "
-                "and university talent."
-            )
-        ),
-        "hero_subtitle": (
-            "Candidate-first grading is using live marketed sites plus public infrastructure "
-            "signals, with a social-political approval overlay and minimum major-metro coverage "
-            "for client review."
-            if market_backed_mode
-            else (
-                "Private shortlist designed to help client principals and site selectors focus on "
-                "metros and corridors where power, fiber, land scale, workforce depth, and "
-                "approval friction align."
-            )
-        ),
+        "hero_title": _hero_title(data_mode=data_mode, opportunity_count=opportunity_count),
+        "hero_subtitle": _hero_subtitle(data_mode=data_mode),
         "opportunity_count": opportunity_count,
         "priority_now_count": priority_now_count,
         "top_tier_count": top_tier_count,
@@ -1277,12 +1269,14 @@ def build_customer_dashboard_summary(
         "featured_opportunities": featured_opportunities,
         "opportunities": opportunities,
         "corridors": corridors,
+        "snapshot": snapshot_metadata if data_mode == "client_snapshot" else None,
+        "coverage": coverage,
         "data_coverage": source_inventory_snapshot,
         "monitoring": monitoring_snapshot,
     }
 
 
-def _load_client_contender_snapshot(settings: Settings) -> list[dict[str, Any]]:
+def _load_client_contender_snapshot(settings: Settings) -> dict[str, Any]:
     path = Path(settings.client_contender_snapshot_path)
     if not path.is_absolute():
         path = Path.cwd() / path
@@ -1290,13 +1284,356 @@ def _load_client_contender_snapshot(settings: Settings) -> list[dict[str, Any]]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return []
+        return {"metadata": {}, "opportunities": []}
 
     opportunities = payload.get("opportunities")
     if not isinstance(opportunities, list):
-        return []
+        return {"metadata": {}, "opportunities": []}
 
-    return [dict(item) for item in opportunities if isinstance(item, dict)]
+    metadata = {
+        key: payload.get(key)
+        for key in (
+            "snapshot_name",
+            "generated_at",
+            "selection_brief",
+            "opportunity_count",
+            "acreage_min",
+            "acreage_median",
+            "acreage_max",
+            "metro_counts",
+            "source_counts",
+        )
+        if key in payload
+    }
+    return {
+        "metadata": metadata,
+        "opportunities": [dict(item) for item in opportunities if isinstance(item, dict)],
+    }
+
+
+def _prepare_opportunities(opportunities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for index, item in enumerate(opportunities, start=1):
+        record = dict(item)
+        rank = _safe_int(record.get("rank"), default=index)
+        record["rank"] = rank
+        record["rank_bucket"] = _rank_bucket(rank)
+        record["price_per_acre"] = _price_per_acre(record)
+        record["price_status"] = _price_status(record)
+        record["source_name"] = _source_name(record)
+        record["market"] = _market_payload(record)
+        record["evidence"] = _evidence_payload(record)
+        enriched.append(record)
+    return enriched
+
+
+def _hero_title(*, data_mode: str, opportunity_count: int) -> str:
+    if data_mode == "live_candidate_scoring":
+        return f"{opportunity_count} live-ranked Texas opportunities balanced across major metros."
+    if data_mode == "client_snapshot":
+        return (
+            f"{opportunity_count} vetted Texas contenders in the 1-2 acre sweet spot, "
+            "balanced across major metros."
+        )
+    return (
+        f"{opportunity_count} ranked Texas opportunities near cities, utilities, "
+        "and university talent."
+    )
+
+
+def _hero_subtitle(*, data_mode: str) -> str:
+    if data_mode == "live_candidate_scoring":
+        return (
+            "Candidate-first grading is using live marketed sites plus public infrastructure "
+            "signals, with a social-political approval overlay and minimum major-metro coverage "
+            "for client review."
+        )
+    if data_mode == "client_snapshot":
+        return (
+            "Client snapshot uses the current top-136 shortlist, strict right-sized acreage, "
+            "market-listing evidence, infrastructure scoring, and approval overlays for "
+            "principal-level review."
+        )
+    return (
+        "Private shortlist designed to help client principals and site selectors focus on "
+        "metros and corridors where power, fiber, land scale, workforce depth, and "
+        "approval friction align."
+    )
+
+
+def _build_coverage_summary(opportunities: list[dict[str, Any]]) -> dict[str, Any]:
+    price_known_count = sum(1 for item in opportunities if item.get("asking_price") is not None)
+    return {
+        "price_known_count": price_known_count,
+        "price_missing_count": max(len(opportunities) - price_known_count, 0),
+        "source_count_by_name": _counter_by_key(opportunities, "source_name", default="Unknown"),
+        "score_band_counts": _counter_by_key(opportunities, "score_band", default="Unscored"),
+        "readiness_stage_counts": _counter_by_key(
+            opportunities,
+            "readiness_stage",
+            default="Unstaged",
+        ),
+    }
+
+
+def _counter_by_key(
+    opportunities: list[dict[str, Any]],
+    key: str,
+    *,
+    default: str,
+) -> dict[str, int]:
+    counts = Counter(str(item.get(key) or default) for item in opportunities)
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _safe_int(value: Any, *, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: Any) -> float | None:
+    if value in {None, ""}:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _rank_bucket(rank: int) -> str:
+    if rank <= 10:
+        return "Top pursuit"
+    if rank <= 50:
+        return "Core diligence"
+    return "Reserve watchlist"
+
+
+def _price_per_acre(item: dict[str, Any]) -> float | None:
+    price = _safe_float(item.get("asking_price"))
+    acreage = _safe_float(item.get("acreage"))
+    if price is None or acreage is None or acreage <= 0:
+        return None
+    return round(price / acreage, 2)
+
+
+def _price_status(item: dict[str, Any]) -> str:
+    return "Price disclosed" if item.get("asking_price") is not None else "Price not disclosed"
+
+
+def _source_name(item: dict[str, Any]) -> str:
+    source = str(
+        item.get("source_name")
+        or item.get("listing_source_id")
+        or item.get("listing_source")
+        or ""
+    ).strip()
+    if source.lower() == "myelisting":
+        return "MyEListing"
+    if source:
+        return source.replace("_", " ").replace("-", " ").title()
+    return "Internal catalogue"
+
+
+def _market_payload(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "broker_name": item.get("broker_name"),
+        "asking_price": item.get("asking_price"),
+        "price_per_acre": item.get("price_per_acre"),
+        "price_status": item.get("price_status"),
+        "source_name": item.get("source_name"),
+        "source_listing_key": item.get("source_listing_key"),
+        "source_url": item.get("source_url"),
+        "listing_status": item.get("listing_status"),
+    }
+
+
+def _format_price(value: Any) -> str:
+    price = _safe_float(value)
+    if price is None:
+        return "not disclosed"
+    if price >= 1_000_000:
+        return f"${price / 1_000_000:.1f}M"
+    return f"${price:,.0f}"
+
+
+def _format_distance(value: Any) -> str | None:
+    distance = _safe_float(value)
+    if distance is None:
+        return None
+    return f"{distance:.1f} mi"
+
+
+def _score_label(score: int) -> str:
+    if score >= 88:
+        return "lead strength"
+    if score >= 74:
+        return "credible strength"
+    if score >= 60:
+        return "workable with diligence"
+    return "needs proof"
+
+
+def _evidence_item(
+    *,
+    score: int | None,
+    headline: str,
+    facts: list[str],
+    caveat: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "score": score,
+        "headline": headline,
+        "facts": [fact for fact in facts if fact],
+        "caveat": caveat,
+    }
+
+
+def _evidence_payload(item: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    power_score = _safe_int(item.get("power_score"))
+    fiber_score = _safe_int(item.get("fiber_score"))
+    water_score = _safe_int(item.get("water_score"))
+    talent_score = _safe_int(item.get("talent_score"))
+    approval_score = _safe_int(item.get("approval_score"))
+    viability_score = _safe_int(item.get("viability_score"))
+    source_name = item.get("source_name") or _source_name(item)
+
+    substation_distance = _format_distance(item.get("nearest_substation_distance_miles"))
+    peering_distance = _format_distance(item.get("nearest_peering_distance_miles"))
+    highway_distance = _format_distance(item.get("nearest_highway_distance_miles"))
+    water_distance = _format_distance(item.get("nearest_water_distance_miles"))
+
+    return {
+        "power": _evidence_item(
+            score=power_score,
+            headline=f"Power reads as {_score_label(power_score)}.",
+            facts=[
+                f"Power score: {power_score}/100.",
+                (
+                    f"Nearest substation: {item.get('nearest_substation_name')}"
+                    f" ({substation_distance})."
+                    if item.get("nearest_substation_name") and substation_distance
+                    else ""
+                ),
+                (
+                    f"Substation voltage signal: {item.get('nearest_substation_voltage_kv')} kV."
+                    if item.get("nearest_substation_voltage_kv") is not None
+                    else ""
+                ),
+            ],
+            caveat=None
+            if substation_distance
+            else (
+                "Substation distance is not attached to this snapshot and requires "
+                "utility confirmation."
+            ),
+        ),
+        "fiber": _evidence_item(
+            score=fiber_score,
+            headline=f"Fiber reads as {_score_label(fiber_score)}.",
+            facts=[
+                f"Fiber score: {fiber_score}/100.",
+                (
+                    f"Nearest peering facility: {item.get('nearest_peering_facility_name')}"
+                    f" ({peering_distance})."
+                    if item.get("nearest_peering_facility_name") and peering_distance
+                    else ""
+                ),
+                (
+                    f"Peering carrier count signal: {item.get('nearest_peering_carrier_count')}."
+                    if item.get("nearest_peering_carrier_count") is not None
+                    else ""
+                ),
+            ],
+            caveat=None
+            if peering_distance
+            else "Carrier-route and lateral-cost evidence still needs confirmation.",
+        ),
+        "water": _evidence_item(
+            score=water_score,
+            headline=f"Water optionality reads as {_score_label(water_score)}.",
+            facts=[
+                f"Water score: {water_score}/100.",
+                (
+                    f"Nearest water proxy: {item.get('nearest_water_name')} ({water_distance})."
+                    if item.get("nearest_water_name") and water_distance
+                    else ""
+                ),
+            ],
+            caveat=None
+            if water_distance
+            else (
+                "Water score is a proxy; municipal supply, reuse, and wastewater capacity "
+                "need proof."
+            ),
+        ),
+        "access": _evidence_item(
+            score=None,
+            headline="Access is anchored to metro and highway proximity.",
+            facts=[
+                f"{item.get('distance_to_city_miles')} mi to the nearest major city anchor.",
+                (
+                    f"{item.get('distance_to_university_miles')} mi to "
+                    f"{item.get('university_anchor')}."
+                ),
+                (
+                    f"Nearest highway/access proxy: {item.get('nearest_highway_name')}"
+                    f" ({highway_distance})."
+                    if item.get("nearest_highway_name") and highway_distance
+                    else ""
+                ),
+            ],
+            caveat=None
+            if highway_distance
+            else "Heavy-haul ingress, curb cuts, and frontage need parcel-level diligence.",
+        ),
+        "talent": _evidence_item(
+            score=talent_score,
+            headline=f"Talent access reads as {_score_label(talent_score)}.",
+            facts=[
+                f"Talent score: {talent_score}/100.",
+                f"Named university anchor: {item.get('university_anchor')}.",
+                f"Primary market: {item.get('metro')}.",
+            ],
+        ),
+        "environment": _evidence_item(
+            score=approval_score,
+            headline=f"Approval path: {item.get('approval_stage')}.",
+            facts=[
+                f"Approval score: {approval_score}/100.",
+                f"Social score: {item.get('social_score')}/100.",
+                f"Political score: {item.get('political_score')}/100.",
+                (
+                    "Headwinds: "
+                    + ", ".join(str(value) for value in item.get("approval_headwinds", [])[:3])
+                    + "."
+                    if item.get("approval_headwinds")
+                    else ""
+                ),
+            ],
+            caveat=(
+                "Approval overlays are decision-support indicators, not entitlement "
+                "determinations."
+            ),
+        ),
+        "market": _evidence_item(
+            score=viability_score,
+            headline=f"Market evidence is sourced from {source_name}.",
+            facts=[
+                f"Asking price: {_format_price(item.get('asking_price'))}.",
+                (
+                    f"Price per acre: {_format_price(item.get('price_per_acre'))}."
+                    if item.get("price_per_acre") is not None
+                    else ""
+                ),
+                f"Listing status: {item.get('listing_status') or 'not attached'}.",
+            ],
+            caveat=None
+            if item.get("asking_price") is not None
+            else "Price is not disclosed, so broker or seller confirmation is a first-call item.",
+        ),
+    }
 
 
 def _build_opportunities() -> list[dict[str, Any]]:
@@ -1457,7 +1794,42 @@ def _build_filters(
         "readiness_stages": sorted({item["readiness_stage"] for item in opportunities}),
         "corridors": sorted({item["corridor_name"] for item in opportunities}),
         "university_anchors": unique_universities,
+        "counties": sorted(
+            {str(item.get("county")) for item in opportunities if item.get("county")}
+        ),
+        "score_bands": sorted(
+            {str(item.get("score_band")) for item in opportunities if item.get("score_band")}
+        ),
+        "rank_buckets": ["Top pursuit", "Core diligence", "Reserve watchlist"],
+        "price_statuses": sorted(
+            {str(item.get("price_status")) for item in opportunities if item.get("price_status")}
+        ),
+        "sources": sorted(
+            {str(item.get("source_name")) for item in opportunities if item.get("source_name")}
+        ),
+        "approval_bands": _score_filter_bands(
+            item.get("approval_score") for item in opportunities
+        ),
+        "viability_bands": _score_filter_bands(
+            item.get("viability_score") for item in opportunities
+        ),
     }
+
+
+def _score_filter_bands(values: Iterable[Any]) -> list[str]:
+    bands = {_score_filter_band(_safe_int(value)) for value in values}
+    order = ["72+", "68-71", "64-67", "<64"]
+    return [band for band in order if band in bands]
+
+
+def _score_filter_band(score: int) -> str:
+    if score >= 72:
+        return "72+"
+    if score >= 68:
+        return "68-71"
+    if score >= 64:
+        return "64-67"
+    return "<64"
 
 
 def _seed_acreage_estimate(acreage_band: str) -> float | None:

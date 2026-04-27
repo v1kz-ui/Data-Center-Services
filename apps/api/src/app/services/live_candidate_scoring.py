@@ -892,6 +892,16 @@ def build_ranked_live_candidate_records(
                     city_distance=city_distance,
                     university_anchor=university_anchor,
                     university_distance=university_distance,
+                    substation=substation,
+                    substation_distance=substation_distance,
+                    peering_facility=peering_facility,
+                    peering_distance=peering_distance,
+                    power_plant=power_plant,
+                    power_plant_distance=power_plant_distance,
+                    highway=highway,
+                    highway_distance=highway_distance,
+                    water_site=water_site,
+                    water_distance=water_distance,
                     factor_scores=factor_scores,
                     viability_score=viability_score,
                     confidence_score=confidence_score,
@@ -1388,6 +1398,16 @@ def _build_opportunity_record(
     city_distance: float,
     university_anchor: UniversityAnchor,
     university_distance: float,
+    substation: PointAsset | None,
+    substation_distance: float | None,
+    peering_facility: PointAsset | None,
+    peering_distance: float | None,
+    power_plant: PointAsset | None,
+    power_plant_distance: float | None,
+    highway: PointAsset | None,
+    highway_distance: float | None,
+    water_site: PointAsset | None,
+    water_distance: float | None,
     factor_scores: dict[str, float],
     viability_score: int,
     confidence_score: int,
@@ -1451,9 +1471,33 @@ def _build_opportunity_record(
         "listing_source_id": candidate.listing_source_id,
         "listing_status": candidate.listing_status,
         "asking_price": candidate.asking_price,
+        "broker_name": candidate.broker_name,
+        "price_per_acre": _price_per_acre(candidate),
         "source_url": candidate.source_url,
         "source_listing_key": candidate.source_listing_key,
         "market_listing_id": candidate.market_listing_id,
+        "nearest_substation_name": substation.label if substation is not None else None,
+        "nearest_substation_distance_miles": _round_optional(substation_distance),
+        "nearest_substation_voltage_kv": (
+            _safe_float(substation.attrs.get("max_voltage_kv"))
+            if substation is not None
+            else None
+        ),
+        "nearest_peering_facility_name": (
+            peering_facility.label if peering_facility is not None else None
+        ),
+        "nearest_peering_distance_miles": _round_optional(peering_distance),
+        "nearest_peering_carrier_count": (
+            _safe_int(peering_facility.attrs.get("carrier_count"))
+            if peering_facility is not None
+            else None
+        ),
+        "nearest_power_plant_name": power_plant.label if power_plant is not None else None,
+        "nearest_power_plant_distance_miles": _round_optional(power_plant_distance),
+        "nearest_highway_name": highway.label if highway is not None else None,
+        "nearest_highway_distance_miles": _round_optional(highway_distance),
+        "nearest_water_name": water_site.label if water_site is not None else None,
+        "nearest_water_distance_miles": _round_optional(water_distance),
         **approval_overlay,
     }
 
@@ -1655,7 +1699,7 @@ def _market_economics_normalized(
 def _price_per_acre(candidate: ListingCandidate) -> float | None:
     if candidate.asking_price is None or candidate.acreage is None or candidate.acreage <= 0:
         return None
-    return candidate.asking_price / candidate.acreage
+    return round(candidate.asking_price / candidate.acreage, 2)
 
 
 def _approval_profile_for_market(*, metro_name: str, region: str) -> ApprovalProfile:
@@ -1940,6 +1984,19 @@ def _safe_float(value: str | None) -> float | None:
         return float(str(value).replace(",", "").replace("$", "").strip())
     except ValueError:
         return None
+
+
+def _safe_int(value: str | None) -> int | None:
+    numeric = _safe_float(value)
+    if numeric is None:
+        return None
+    return round(numeric)
+
+
+def _round_optional(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return round(value, 2)
 
 
 def _score_band(score: int) -> str:

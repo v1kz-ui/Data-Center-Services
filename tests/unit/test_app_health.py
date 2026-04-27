@@ -31,7 +31,7 @@ def test_dashboard_landing_page_returns_private_client_shell(
     assert "Texas Opportunity Catalogue" in response.text
     assert "watchlist" in response.text
     assert "Open contender board" in response.text
-    assert "Open live JSON" in response.text
+    assert "Open Data Export" in response.text
     assert 'href="/dashboard/contenders"' in response.text
     assert 'href="/dashboard/summary"' in response.text
     assert 'href="/health"' in response.text
@@ -48,8 +48,15 @@ def test_dashboard_contenders_page_returns_contender_board(
     assert "Major Metro Contender Board" in response.text
     assert "Open contender board" in response.text
     assert "Main portal" in response.text
-    assert "Live JSON" in response.text
+    assert "Data Export" in response.text
     assert "Approval" in response.text
+    assert "Compare contenders" in response.text
+    assert "All counties" in response.text
+    assert "All pursuit buckets" in response.text
+    assert "Price / acre" in response.text
+    assert "No successful pulls recorded" not in response.text
+    assert "0 listings" not in response.text
+    assert "myelisting.com/listing" not in response.text
     assert 'href="/dashboard/contenders/' in response.text
     assert 'data-href="/dashboard/contenders/' in response.text
     assert 'href="/"' in response.text
@@ -74,6 +81,10 @@ def test_dashboard_contender_detail_page_returns_full_explanation(
     assert "Approval Path" in response.text
     assert "Recommended Diligence Path" in response.text
     assert "Nearby Board Comparisons" in response.text
+    assert "Why this site ranks" in response.text
+    assert "Evidence Cards" in response.text
+    assert "Infrastructure Proximity" in response.text
+    assert "Commercial Evidence" in response.text
     assert "Review decision lens" in response.text
     assert "quick-nav" in response.text
     assert "Top 136 client dossier" in response.text
@@ -110,6 +121,18 @@ def test_dashboard_summary_returns_texas_opportunity_catalog(
     assert all("approval_score" in item for item in payload["opportunities"])
     assert all(item["approval_stage"] for item in payload["opportunities"])
     assert all(isinstance(item["approval_headwinds"], list) for item in payload["opportunities"])
+    assert payload["coverage"]["price_known_count"] >= 0
+    assert payload["coverage"]["price_missing_count"] >= 0
+    assert payload["coverage"]["source_count_by_name"]
+    assert payload["coverage"]["score_band_counts"]
+    assert payload["coverage"]["readiness_stage_counts"]
+    assert "counties" in payload["filters"]
+    assert "rank_buckets" in payload["filters"]
+    assert "price_statuses" in payload["filters"]
+    assert "sources" in payload["filters"]
+    assert all(item["rank_bucket"] for item in payload["opportunities"])
+    assert all(item["evidence"] for item in payload["opportunities"])
+    assert all(item["market"] for item in payload["opportunities"])
     assert payload["corridor_count"] >= 1
     if payload["data_mode"] == "seeded_catalog":
         assert payload["opportunity_count"] == 50
@@ -119,9 +142,20 @@ def test_dashboard_summary_returns_texas_opportunity_catalog(
         )
     else:
         assert payload["opportunity_count"] == 136
-        assert payload["hero_title"].startswith(
-            f"{payload['opportunity_count']} live-ranked Texas opportunities"
-        )
+        if payload["data_mode"] == "client_snapshot":
+            assert (
+                payload["snapshot"]["snapshot_name"]
+                == "regium_top_136_texas_1_to_2_acre_contenders"
+            )
+            assert payload["snapshot"]["acreage_min"] == 1.0
+            assert payload["snapshot"]["acreage_max"] == 2.0
+            assert payload["hero_title"].startswith(
+                f"{payload['opportunity_count']} vetted Texas contenders"
+            )
+        else:
+            assert payload["hero_title"].startswith(
+                f"{payload['opportunity_count']} live-ranked Texas opportunities"
+            )
         assert any(item["confidence_score"] is not None for item in payload["opportunities"])
         assert all(1.0 <= float(item["acreage"]) <= 2.0 for item in payload["opportunities"])
         counts: dict[str, int] = {}

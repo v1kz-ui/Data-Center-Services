@@ -24,7 +24,7 @@ def test_build_live_candidate_opportunities_prefers_right_sized_site_over_large_
 
     opportunities = build_live_candidate_opportunities(db_session, limit=10)
 
-    assert len(opportunities) == 2
+    assert len(opportunities) == 1
     top = opportunities[0]
     assert top["site_name"] == "Austin Right-Sized Powered Industrial Land"
     assert top["metro"] == "Austin"
@@ -33,7 +33,13 @@ def test_build_live_candidate_opportunities_prefers_right_sized_site_over_large_
     assert top["viability_score"] >= 70
     assert top["listing_source_id"] == "myelisting"
     assert top["source_url"] == "https://example.test/listings/austin-right-sized-powered-industrial-land"
-    assert top["acreage_band"] == "2.4 acres (sweet-spot footprint)"
+    assert top["acreage_band"] == "1.4 acres (1-2 acre sweet spot)"
+    assert top["price_per_acre"] == 235714.29
+    assert top["broker_name"] is None
+    assert top["nearest_substation_name"] == "Austin Substation"
+    assert top["nearest_peering_facility_name"] == "Austin Carrier Hotel"
+    assert top["nearest_highway_name"] == "I 35"
+    assert top["nearest_water_name"] == "Colorado River at Austin"
     assert top["social_score"] >= 50
     assert top["political_score"] >= 45
     assert top["approval_score"] >= 50
@@ -52,11 +58,6 @@ def test_build_live_candidate_opportunities_prefers_right_sized_site_over_large_
     assert top["approval_stage"]
     assert top["approval_headwinds"]
     assert "Approval path currently reads" in top["approval_summary"]
-
-    second = opportunities[1]
-    assert second["site_name"] == "Austin Large Tract Powered Industrial Land"
-    assert second["viability_score"] <= top["viability_score"]
-    assert second["approval_score"] <= top["approval_score"]
 
 
 def test_select_balanced_opportunities_guarantees_major_metro_floor() -> None:
@@ -163,7 +164,7 @@ def _seed_live_candidate_context(session: Session) -> None:
             asset_type="commercial land",
             listing_status="sale",
             asking_price=Decimal("330000"),
-            acreage=Decimal("2.4"),
+            acreage=Decimal("1.4"),
             city="Austin",
             state_code="TX",
             latitude=Decimal("30.2840"),

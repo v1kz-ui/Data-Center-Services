@@ -53,9 +53,26 @@ class TexasOpportunityResponse(BaseModel):
     listing_source_id: str | None = None
     listing_status: str | None = None
     asking_price: float | None = None
+    broker_name: str | None = None
+    price_per_acre: float | None = None
+    price_status: str | None = None
+    source_name: str | None = None
     source_url: str | None = None
     source_listing_key: str | None = None
     market_listing_id: str | None = None
+    rank_bucket: str | None = None
+    evidence: dict[str, Any] | None = None
+    market: dict[str, Any] | None = None
+    nearest_substation_name: str | None = None
+    nearest_substation_distance_miles: float | None = None
+    nearest_substation_voltage_kv: float | None = None
+    nearest_peering_facility_name: str | None = None
+    nearest_peering_distance_miles: float | None = None
+    nearest_peering_carrier_count: int | None = None
+    nearest_highway_name: str | None = None
+    nearest_highway_distance_miles: float | None = None
+    nearest_water_name: str | None = None
+    nearest_water_distance_miles: float | None = None
 
 
 class DashboardCorridorResponse(BaseModel):
@@ -91,5 +108,7 @@ class TexasDashboardSummaryResponse(BaseModel):
     featured_opportunities: list[TexasOpportunityResponse]
     opportunities: list[TexasOpportunityResponse]
     corridors: list[DashboardCorridorResponse]
+    snapshot: dict[str, Any] | None = None
+    coverage: dict[str, Any] | None = None
     data_coverage: dict[str, Any]
     monitoring: dict[str, Any]
